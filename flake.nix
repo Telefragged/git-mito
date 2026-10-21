@@ -37,6 +37,9 @@
 
       checks = forAllSystems (pkgs: {
         unit = (cargoNix pkgs).rootCrate.build.override { runTests = true; };
+        vm = pkgs.callPackage ./nix/vm-test.nix {
+          git-mito = self.packages.${pkgs.stdenv.hostPlatform.system}.git-mito;
+        };
       });
 
       devShells = forAllSystems (pkgs: {
