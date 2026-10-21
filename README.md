@@ -78,6 +78,7 @@ adds the state directory to `.git/info/exclude`.
 
 ```sh
 nix develop               # toolchain, crate2nix, libclang for bindgen
+                          # (or `direnv allow` to load it on cd)
 cargo build
 tests/scenario.sh <empty-dir-on-btrfs>   # end-to-end, with git-mito on PATH
 nix flake check           # unit tests and a NixOS VM test (needs KVM)
