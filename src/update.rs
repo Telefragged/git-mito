@@ -61,14 +61,14 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
             None => Ok(None),
         }
     };
-    // Don't spend a warm-up on a base that has already lost.
+    // Don't run on-update for a base that has already lost.
     let early = published(mito.current_base()?.as_deref())?;
     if let Some(winner) = loses_to(&mito.repo, resolve_track(mito)?, target, early)? {
         discarded(&short_target, winner);
         return Ok(());
     }
-    if let Some(command) = &mito.config.base.warm {
-        warm(command, &path)?;
+    if let Some(command) = &mito.config.base.on_update {
+        on_update(command, &path)?;
     }
     // A published base must never change: its files, index and HEAD have to
     // keep agreeing for every worktree cloned from it.
@@ -119,17 +119,17 @@ fn loses_to(
     Ok((tracked != target && !ahead).then_some(published))
 }
 
-/// Runs the warm-up `command` in the new base at `path`. The base is a
-/// snapshot of the previous one, so whatever the last warm-up left behind is
+/// Runs the on-update `command` in the new base at `path`. The base is a
+/// snapshot of the previous one, so whatever the last run left behind is
 /// there to build on.
-fn warm(command: &str, path: &Path) -> Result<()> {
-    eprintln!("Warming the new base: {command}");
+fn on_update(command: &str, path: &Path) -> Result<()> {
+    eprintln!("Running on-update in the new base: {command}");
     let mut cmd = Command::new("sh");
     cmd.arg("-c").arg(command).current_dir(path);
     git::scrub_env(&mut cmd);
-    let status = cmd.status().context("running the warm-up command")?;
+    let status = cmd.status().context("running the on-update command")?;
     if !status.success() {
-        bail!("the warm-up command failed ({status}); the base was left as it was");
+        bail!("the on-update command failed ({status}); the base was left as it was");
     }
     Ok(())
 }

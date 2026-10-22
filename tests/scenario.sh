@@ -43,18 +43,18 @@ printf 'target/\n' >.gitignore
 git add -A
 git commit -qm one
 
-step "first update creates and warms the base"
-# The warm-up builds an ignored artifact and counts its runs; each base is a
+step "first update creates the base and runs on-update in it"
+# on-update builds an ignored artifact and counts its runs; each base is a
 # snapshot of the last, so the count carries over.
 echo /.mito.toml >>.git/info/exclude
 cat >.mito.toml <<'TOML'
 [base]
-warm = "mkdir -p target && echo artifact >target/out && pwd >target/warmed-in && echo run >>target/runs"
+on-update = "mkdir -p target && echo artifact >target/out && pwd >target/ran-in && echo run >>target/runs"
 TOML
 git mito update
 base=$(readlink -f .mito/base)
-assert_eq "$(cat "$base/target/warmed-in")" "$base" "warm-up ran in the new base"
-assert_eq "$(wc -l <"$base/target/runs")" 1 "warm-up ran once"
+assert_eq "$(cat "$base/target/ran-in")" "$base" "on-update ran in the new base"
+assert_eq "$(wc -l <"$base/target/runs")" 1 "on-update ran once"
 is_subvolume "$base" || fail "base is not a subvolume"
 assert_clean "$base"
 assert_clean .
@@ -146,8 +146,8 @@ base=$(readlink -f .mito/base)
 [[ -e $old_base ]] && fail "old base still exists"
 assert_eq "$(git -C "$base" rev-parse HEAD)" "$(git rev-parse main)" "new base commit"
 assert_eq "$(git rev-parse mito/base)" "$(git rev-parse main)" "mito/base ref"
-assert_eq "$(cat "$base/target/warmed-in")" "$base" "warm-up ran in the new base"
-assert_eq "$(wc -l <"$base/target/runs")" 2 "warm-up built on the previous base"
+assert_eq "$(cat "$base/target/ran-in")" "$base" "on-update ran in the new base"
+assert_eq "$(wc -l <"$base/target/runs")" 2 "on-update built on the previous base"
 assert_clean "$base"
 assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "one base registered"
 assert_eq "$(git -C ../wt1 status --porcelain)" " M keep" "wt1 untouched by update"
@@ -167,30 +167,30 @@ git mito remove "$base" && fail "removed the base"
 git worktree remove ../wt3
 [[ -e ../wt3 ]] && fail "git worktree remove left wt3 behind"
 
-step "a failing warm-up leaves the base as it was"
+step "a failing on-update leaves the base as it was"
 good_base=$base
 cp .mito.toml ../mito.toml.good
-printf '[base]\nwarm = "exit 3"\n' >.mito.toml
-git mito update --force && fail "update with a failing warm-up succeeded"
+printf '[base]\non-update = "exit 3"\n' >.mito.toml
+git mito update --force && fail "update with a failing on-update succeeded"
 assert_eq "$(readlink -f .mito/base)" "$good_base" "base pointer unchanged"
 assert_eq "$(ls .mito/bases | wc -l)" 1 "failed base deleted"
 assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "failed base unregistered"
 mv ../mito.toml.good .mito.toml
 
 step "concurrent updates: the newer revision wins, not the last to finish"
-# A commit holding a `hold` file has a warm-up that signals on the `started`
+# A commit holding a `hold` file has a on-update that signals on the `started`
 # FIFO, then blocks reading `release` until the test lets it go.
 mkfifo ../started ../release
 mv .mito.toml ../mito.toml.saved
 cat >.mito.toml <<TOML
 [base]
 track = "tracked"
-warm = "if [ -e hold ]; then echo >'$work/started'; read -r _ <'$work/release'; fi"
+on-update = "if [ -e hold ]; then echo >'$work/started'; read -r _ <'$work/release'; fi"
 TOML
 base_commit() { git -C "$(readlink -f .mito/base)" rev-parse HEAD; }
 # Commits a held commit and a free one on top, and starts updating to the held
 # one in the background (logging to $1). Returns once that update is in its
-# warm-up, so it has resolved the held commit.
+# on-update, so it has resolved the held commit.
 race() {
   touch hold && git add hold && git commit -qm held
   held=$(git rev-parse HEAD)
