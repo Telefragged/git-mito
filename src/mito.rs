@@ -15,9 +15,15 @@
 //! exclusively only to decide on and make the swap, the one point where
 //! concurrent updates meet; nothing can still be reading the base it
 //! replaces, so it deletes that base afterwards without the lock.
+//!
+//! [`BaseLock`] enforces this: `base` is read only when taking the lock, and
+//! a [`Source`](crate::worktree::Source) borrows its directory from it, so
+//! the lock can't be dropped before the copy is made, and the swap takes the
+//! lock exclusively.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -70,8 +76,7 @@ impl Mito {
         self.dir.join("bases")
     }
 
-    /// The directory of the current base, if there is one.
-    pub fn current_base(&self) -> Result<Option<PathBuf>> {
+    fn current_base(&self) -> Result<Option<PathBuf>> {
         match fs::read_link(self.base_link()) {
             Ok(target) => Ok(Some(self.dir.join(target))),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -81,7 +86,12 @@ impl Mito {
 
     /// Makes `bases/<id>`, at `commit`, the current base: swaps the base
     /// pointer atomically and moves the `mito/base` branch to match.
-    pub fn publish_base(&self, id: &str, commit: gix::ObjectId) -> Result<()> {
+    pub fn publish_base(
+        &self,
+        _lock: &ExclusiveBaseLock,
+        id: &str,
+        commit: gix::ObjectId,
+    ) -> Result<()> {
         let tmp = self.dir.join("base.tmp");
         let _ = fs::remove_file(&tmp);
         std::os::unix::fs::symlink(Path::new("bases").join(id), &tmp)?;
@@ -95,15 +105,23 @@ impl Mito {
         Ok(())
     }
 
-    /// Takes the lock guarding `base`: shared while reading and copying the
-    /// base, exclusive to swap it.
-    pub fn lock_base(&self, exclusive: bool) -> Result<Flock<File>> {
-        let arg = if exclusive {
-            FlockArg::LockExclusive
-        } else {
-            FlockArg::LockShared
-        };
-        lock(&self.dir.join("lock"), arg)
+    /// Takes the lock guarding `base` shared, to read and copy the base.
+    pub fn lock_base(&self) -> Result<BaseLock> {
+        self.lock_base_as(FlockArg::LockShared)
+    }
+
+    /// Takes the lock guarding `base` exclusively, to swap it.
+    pub fn lock_base_exclusive(&self) -> Result<ExclusiveBaseLock> {
+        self.lock_base_as(FlockArg::LockExclusive)
+            .map(ExclusiveBaseLock)
+    }
+
+    fn lock_base_as(&self, arg: FlockArg) -> Result<BaseLock> {
+        let flock = lock(&self.dir.join("lock"), arg)?;
+        Ok(BaseLock {
+            base: self.current_base()?,
+            _flock: flock,
+        })
     }
 
     /// Adds the state directory to `info/exclude` when it lives inside the
@@ -129,6 +147,25 @@ impl Mito {
         }
         writeln!(file, "{pattern}")?;
         Ok(())
+    }
+}
+
+/// The lock guarding `base`, held, and the base it guards.
+pub struct BaseLock {
+    /// The directory of the current base, if there is one. It stays the
+    /// current base while the lock is held.
+    pub base: Option<PathBuf>,
+    _flock: Flock<File>,
+}
+
+/// [`BaseLock`], held exclusively.
+pub struct ExclusiveBaseLock(BaseLock);
+
+impl Deref for ExclusiveBaseLock {
+    type Target = BaseLock;
+
+    fn deref(&self) -> &BaseLock {
+        &self.0
     }
 }
 

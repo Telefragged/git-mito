@@ -30,9 +30,9 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     let target = resolve_track(mito)?;
     let short_target = short(&target);
     // Held while the current base is read and copied, as in `add`.
-    let guard = mito.lock_base(false)?;
-    let current = mito.current_base()?;
-    let source = current.as_deref().map(Source::open).transpose()?;
+    let guard = mito.lock_base()?;
+    let current = guard.base.clone();
+    let source = guard.base.as_deref().map(Source::open).transpose()?;
     let current_commit = source.as_ref().map(|s| s.commit);
     if current_commit == Some(target) && !args.force {
         println!("Base is already at {short_target}");
@@ -62,7 +62,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         }
     };
     // Don't run on-update for a base that has already lost.
-    let early = published(mito.current_base()?.as_deref())?;
+    let early = published(mito.lock_base()?.base.as_deref())?;
     if let Some(winner) = loses_to(&mito.repo, resolve_track(mito)?, target, early)? {
         discarded(&short_target, winner);
         return Ok(());
@@ -75,14 +75,14 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     btrfs::set_read_only(&path, true)?;
 
     let tracked = resolve_track(mito)?;
-    let lock = mito.lock_base(true)?;
-    let old = mito.current_base()?;
+    let lock = mito.lock_base_exclusive()?;
+    let old = lock.base.clone();
     if let Some(winner) = loses_to(&mito.repo, tracked, target, published(old.as_deref())?)? {
         drop(lock);
         discarded(&short_target, winner);
         return Ok(());
     }
-    mito.publish_base(&id, target)?;
+    mito.publish_base(&lock, &id, target)?;
     drop(lock);
     pending.keep();
     println!("Base updated to {short_target} at {}", path.display());

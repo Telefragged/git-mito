@@ -49,11 +49,11 @@ pub fn run(mito: &Mito, args: AddArgs) -> Result<()> {
     // Run git where the user ran mito, so HEAD means what it would for git.
     let cwd = std::env::current_dir()?;
     let path = std::path::absolute(&args.path)?;
-    let guard = mito.lock_base(false)?;
-    let Some(base) = mito.current_base()? else {
+    let guard = mito.lock_base()?;
+    let Some(base) = guard.base.as_deref() else {
         bail!("there is no base worktree yet; run `git mito update` first");
     };
-    let source = Source::open(&base)?;
+    let source = Source::open(base)?;
 
     let mut git_args: Vec<OsString> = Vec::new();
     let mut flag = |f: &str| git_args.push(f.into());
