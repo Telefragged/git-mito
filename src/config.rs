@@ -22,6 +22,9 @@ pub struct BaseConfig {
     /// Revision the base worktree follows. Defaults to `origin/HEAD`, falling
     /// back to the main worktree's `HEAD`.
     pub track: Option<String>,
+    /// Command run with `sh -c` in each new base before it is published, for
+    /// example a build, so worktrees start with its outputs.
+    pub warm: Option<String>,
 }
 
 impl Config {
@@ -49,6 +52,7 @@ mod tests {
         let config = Config::parse("").unwrap();
         assert_eq!(config.dir, None);
         assert_eq!(config.base.track, None);
+        assert_eq!(config.base.warm, None);
     }
 
     #[test]
@@ -59,11 +63,13 @@ mod tests {
 
             [base]
             track = "origin/main"
+            warm = "cargo build"
             "#,
         )
         .unwrap();
         assert_eq!(config.dir, Some(PathBuf::from("../mito-state")));
         assert_eq!(config.base.track.as_deref(), Some("origin/main"));
+        assert_eq!(config.base.warm.as_deref(), Some("cargo build"));
     }
 
     #[test]

@@ -19,19 +19,7 @@ where
 {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(dir).args(args);
-    // mito runs git in several worktrees, so drop the variables that pin
-    // git to one worktree's location (the part of `git rev-parse
-    // --local-env-vars` that does so; config and object settings still apply).
-    for var in [
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_IMPLICIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_COMMON_DIR",
-        "GIT_PREFIX",
-    ] {
-        cmd.env_remove(var);
-    }
+    scrub_env(&mut cmd);
     let output = cmd.output().context("running git")?;
     if !output.status.success() {
         let args: Vec<_> = cmd
@@ -62,6 +50,22 @@ pub fn head(repo: &gix::Repository) -> Result<gix::ObjectId> {
     let head = repo.head()?;
     let id = head.id().context("HEAD does not point at a commit yet")?;
     Ok(id.detach())
+}
+
+/// Removes the environment variables that pin git to one worktree's location
+/// (the part of `git rev-parse --local-env-vars` that does so; config and
+/// object settings still apply), so `cmd` finds the worktree it runs in.
+pub fn scrub_env(cmd: &mut Command) {
+    for var in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_PREFIX",
+    ] {
+        cmd.env_remove(var);
+    }
 }
 
 /// The commit `rev` names.

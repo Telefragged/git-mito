@@ -16,8 +16,9 @@ git mito remove ../feature
 ## Commands
 
 - `git mito update [--force]` builds a new base at the tracked revision next to
-  the current one and swaps it in atomically; `add` keeps working meanwhile.
-  The branch `mito/base` is moved to the base's commit.
+  the current one, runs the warm-up command in it if one is configured, and
+  swaps it in atomically; `add` keeps working meanwhile. The branch
+  `mito/base` is moved to the base's commit.
 - `git mito add [-b <branch> | -B <branch> | --detach] [--lock] <path> [<commit-ish>]`
   takes `git worktree add`'s options and resolves them the same way, so it
   defaults to `HEAD`. When that isn't the base's commit, the difference from
@@ -38,7 +39,16 @@ dir = ".mito"
 [base]
 # Revision the base follows. Defaults to origin/HEAD, then HEAD.
 track = "origin/main"
+# Run in each new base before it is published. Unset by default.
+warm = "cargo build"
 ```
+
+`warm` runs with `sh -c`, so it can be a command line, a program or a script
+in the repository (`./scripts/warm.sh`), with the new base as its working
+directory. Its build outputs then come along in every worktree added from that
+base. Each base starts as a snapshot of the previous one, so the warm-up builds
+incrementally on what the last one left behind. If it fails, `update` stops
+and the previous base stays in place.
 
 `update` does not fetch; run `git fetch` first to follow a remote, for example
 with an alias for `git fetch && git mito update`.
@@ -71,8 +81,9 @@ adds the state directory to `.git/info/exclude`.
 - Subvolumes nested inside the base are not snapshotted with it; they show up
   empty in new worktrees.
 - Build tools that record absolute paths may rebuild in a new worktree, since
-  each worktree lives at its own path. Running the build under `bwrap` with the
-  worktree bound to a stable path works around this.
+  each worktree, and each base the warm-up runs in, lives at its own path.
+  Running the build under `bwrap` with the worktree bound to a stable path
+  works around this, in `warm` and in the worktrees alike.
 
 ## Development
 

@@ -1,8 +1,10 @@
 use std::ffi::OsString;
 use std::fs;
+use std::path::Path;
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 
 use crate::btrfs;
 use crate::git;
@@ -49,8 +51,12 @@ pub fn run(mito: &Mito, args: UpdateArgs) -> Result<()> {
         .collect();
     worktree::clone(&mito.repo, &mito.root, &git_args, &path, source.as_ref())?.checkout()?;
 
-    // TODO(warm): run the configured warm-up command in `path` here, before
-    // the base is published, so new worktrees start with warm build outputs.
+    if let Some(command) = &mito.config.base.warm
+        && let Err(e) = warm(command, &path)
+    {
+        let _ = worktree::destroy(&mito.root, &path);
+        return Err(e);
+    }
 
     // A published base must never change: its files, index and HEAD have to
     // keep agreeing for every worktree cloned from it.
@@ -70,6 +76,21 @@ pub fn run(mito: &Mito, args: UpdateArgs) -> Result<()> {
 
     // Nothing can be reading the old base any more.
     mito.collect_garbage()
+}
+
+/// Runs the warm-up `command` in the new base at `path`. The base is a
+/// snapshot of the previous one, so whatever the last warm-up left behind is
+/// there to build on.
+fn warm(command: &str, path: &Path) -> Result<()> {
+    eprintln!("Warming the new base: {command}");
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(command).current_dir(path);
+    git::scrub_env(&mut cmd);
+    let status = cmd.status().context("running the warm-up command")?;
+    if !status.success() {
+        bail!("the warm-up command failed ({status}); the base was left as it was");
+    }
+    Ok(())
 }
 
 /// Resolves the revision the base follows: `base.track` from the config,

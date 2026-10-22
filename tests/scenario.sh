@@ -43,9 +43,18 @@ printf 'target/\n' >.gitignore
 git add -A
 git commit -qm one
 
-step "first update creates the base"
+step "first update creates and warms the base"
+# The warm-up builds an ignored artifact and counts its runs; each base is a
+# snapshot of the last, so the count carries over.
+echo /.mito.toml >>.git/info/exclude
+cat >.mito.toml <<'TOML'
+[base]
+warm = "mkdir -p target && echo artifact >target/out && pwd >target/warmed-in && echo run >>target/runs"
+TOML
 git mito update
 base=$(readlink -f .mito/base)
+assert_eq "$(cat "$base/target/warmed-in")" "$base" "warm-up ran in the new base"
+assert_eq "$(wc -l <"$base/target/runs")" 1 "warm-up ran once"
 is_subvolume "$base" || fail "base is not a subvolume"
 assert_clean "$base"
 assert_clean .
@@ -55,13 +64,6 @@ git -C "$base" symbolic-ref -q HEAD && fail "base HEAD is not detached"
 
 step "update is a no-op when the base is current"
 git mito update | grep -q "already"
-
-# Stand in for the future warm-up step: an ignored build artifact in the base,
-# which has to be made writable for it.
-btrfs property set "$base" ro false
-mkdir "$base/target"
-echo artifact >"$base/target/out"
-btrfs property set "$base" ro true
 
 step "add snapshots the base"
 git mito add ../wt1
@@ -144,7 +146,8 @@ base=$(readlink -f .mito/base)
 [[ -e $old_base ]] && fail "old base still exists"
 assert_eq "$(git -C "$base" rev-parse HEAD)" "$(git rev-parse main)" "new base commit"
 assert_eq "$(git rev-parse mito/base)" "$(git rev-parse main)" "mito/base ref"
-assert_eq "$(cat "$base/target/out")" artifact "artifact survives update"
+assert_eq "$(cat "$base/target/warmed-in")" "$base" "warm-up ran in the new base"
+assert_eq "$(wc -l <"$base/target/runs")" 2 "warm-up built on the previous base"
 assert_clean "$base"
 assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "one base registered"
 assert_eq "$(git -C ../wt1 status --porcelain)" " M keep" "wt1 untouched by update"
@@ -163,6 +166,16 @@ git mito remove --force ../wt1
 git mito remove "$base" && fail "removed the base"
 git worktree remove ../wt3
 [[ -e ../wt3 ]] && fail "git worktree remove left wt3 behind"
+
+step "a failing warm-up leaves the base as it was"
+good_base=$base
+cp .mito.toml ../mito.toml.good
+printf '[base]\nwarm = "exit 3"\n' >.mito.toml
+git mito update --force && fail "update with a failing warm-up succeeded"
+assert_eq "$(readlink -f .mito/base)" "$good_base" "base pointer unchanged"
+assert_eq "$(ls .mito/bases | wc -l)" 1 "failed base deleted"
+assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "failed base unregistered"
+mv ../mito.toml.good .mito.toml
 
 step "bases are read-only, their worktrees are not"
 base=$(readlink -f .mito/base)
