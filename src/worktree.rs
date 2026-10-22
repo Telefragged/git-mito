@@ -41,11 +41,28 @@ pub struct Pending {
     path: PathBuf,
     /// The new worktree.
     repo: gix::Repository,
-    /// The branch HEAD is on and its tip before `git worktree add`; `None`
-    /// for a branch git created.
-    branch: Option<(gix::refs::FullName, Option<gix::ObjectId>)>,
+    /// The commit `git worktree add` set HEAD to.
+    head: gix::ObjectId,
+    /// What undoes `git worktree add`'s change to the branch HEAD is on.
+    branch: Option<BranchUndo>,
     source_commit: Option<gix::ObjectId>,
     done: bool,
+}
+
+/// Undoes what `git worktree add` did to a branch, as long as the branch is
+/// still at `at`, where it left it, so as not to undo a move made meanwhile.
+enum BranchUndo {
+    /// Deletes a branch it created, with any tracking set up for it.
+    Delete {
+        name: gix::refs::FullName,
+        at: gix::ObjectId,
+    },
+    /// Moves a branch it reset back to `to`.
+    Reset {
+        name: gix::refs::FullName,
+        at: gix::ObjectId,
+        to: gix::ObjectId,
+    },
 }
 
 /// Creates the worktree at `path` by running `git worktree add --no-checkout
@@ -62,18 +79,21 @@ pub fn clone(
     let branches = git::local_branches(repo)?;
     let add = ["worktree", "add", "--no-checkout"].map(OsString::from);
     git::run(dir, add.iter().chain(args))?;
-    let mut pending = Pending {
+    let repo = git::open(path)?;
+    let head = git::head(&repo)?;
+    let branch = repo.head_name()?.map(|name| match branches.get(&name) {
+        Some(&to) => BranchUndo::Reset { name, at: head, to },
+        None => BranchUndo::Delete { name, at: head },
+    });
+    let pending = Pending {
         dir: dir.to_owned(),
         path: path.to_owned(),
-        repo: git::open(path)?,
-        branch: None,
+        repo,
+        head,
+        branch,
         source_commit: source.map(|s| s.commit),
         done: false,
     };
-    pending.branch = pending.repo.head_name()?.map(|name| {
-        let tip = branches.get(&name).copied();
-        (name, tip)
-    });
     pending.populate(source)?;
     Ok(pending)
 }
@@ -121,7 +141,7 @@ impl Pending {
     /// Brings the files to HEAD with `git reset --hard`, which touches only
     /// what differs from the source. Returns HEAD.
     pub fn checkout(&mut self) -> Result<gix::ObjectId> {
-        let head = git::head(&self.repo)?;
+        let head = self.head;
         match self.source_commit {
             Some(base) if base == head => {}
             Some(base) => {
@@ -160,12 +180,22 @@ impl Drop for Pending {
             return;
         }
         let _ = destroy(&self.dir, &self.path);
-        if let Some((name, tip)) = &self.branch {
-            let name = name.as_bstr().to_string();
-            let _ = match tip {
-                None => git::run(&self.dir, ["update-ref", "-d", &name]),
-                Some(tip) => git::run(&self.dir, ["update-ref", &name, &tip.to_string()]),
-            };
+        match &self.branch {
+            Some(BranchUndo::Delete { name, at }) => {
+                let full = name.as_bstr().to_string();
+                if git::run(&self.dir, ["update-ref", "-d", &full, &at.to_string()]).is_ok() {
+                    let section = format!("branch.{}", name.shorten());
+                    let _ = git::run(&self.dir, ["config", "--remove-section", &section]);
+                }
+            }
+            Some(BranchUndo::Reset { name, at, to }) => {
+                let full = name.as_bstr().to_string();
+                let _ = git::run(
+                    &self.dir,
+                    ["update-ref", &full, &to.to_string(), &at.to_string()],
+                );
+            }
+            None => {}
         }
     }
 }
