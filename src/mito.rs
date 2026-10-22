@@ -84,24 +84,26 @@ impl Mito {
         }
     }
 
-    /// Makes `bases/<id>`, at `commit`, the current base: swaps the base
-    /// pointer atomically and moves the `mito/base` branch to match.
-    pub fn publish_base(
-        &self,
-        _lock: &ExclusiveBaseLock,
-        id: &str,
-        commit: gix::ObjectId,
-    ) -> Result<()> {
+    /// Makes `bases/<id>` the current base by swapping the base pointer
+    /// atomically, its last step.
+    pub fn publish_base(&self, _lock: &ExclusiveBaseLock, id: &str) -> Result<()> {
         let tmp = self.dir.join("base.tmp");
         let _ = fs::remove_file(&tmp);
         std::os::unix::fs::symlink(Path::new("bases").join(id), &tmp)?;
-        fs::rename(&tmp, self.base_link()).context("swapping the base pointer")?;
-        self.repo.reference(
-            "refs/heads/mito/base",
-            commit,
-            gix::refs::transaction::PreviousValue::Any,
-            format!("mito: update base to {}", git::short(&commit)),
-        )?;
+        fs::rename(&tmp, self.base_link()).context("swapping the base pointer")
+    }
+
+    /// Moves the `mito/base` branch to `commit`, the current base's. Under
+    /// the lock, so that it ends at the base published last.
+    pub fn set_base_ref(&self, _lock: &ExclusiveBaseLock, commit: gix::ObjectId) -> Result<()> {
+        self.repo
+            .reference(
+                "refs/heads/mito/base",
+                commit,
+                gix::refs::transaction::PreviousValue::Any,
+                format!("mito: update base to {}", git::short(&commit)),
+            )
+            .context("moving the mito/base branch")?;
         Ok(())
     }
 

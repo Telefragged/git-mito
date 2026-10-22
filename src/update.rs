@@ -82,9 +82,13 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         discarded(&short_target, winner);
         return Ok(());
     }
-    mito.publish_base(&lock, &id, target)?;
+    pending.commit(|| mito.publish_base(&lock, &id))?;
+    // The branch only mirrors the base, so failing to move it is no reason
+    // to fail the update.
+    if let Err(e) = mito.set_base_ref(&lock, target) {
+        eprintln!("warning: {e:#}");
+    }
     drop(lock);
-    pending.keep();
     println!("Base updated to {short_target} at {}", path.display());
     // Swapped under the exclusive lock, so nothing still reads the old base.
     if let Some(old) = old {

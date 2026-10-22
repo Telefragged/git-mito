@@ -31,10 +31,10 @@ impl<'a> Source<'a> {
     }
 }
 
-/// A worktree registered with git that isn't finished yet. Unless
-/// [`Pending::keep`] is called, dropping it rolls everything back: the
-/// worktree, its registration, and whatever `git worktree add` did to its
-/// branch.
+/// A worktree registered with git that isn't finished yet. Until it is kept,
+/// by [`Pending::keep`] or [`Pending::commit`], dropping it rolls everything
+/// back: the worktree, its registration, and whatever `git worktree add` did
+/// to its branch.
 pub struct Pending {
     /// Where git runs.
     dir: PathBuf,
@@ -124,6 +124,15 @@ impl Pending {
     /// Keeps the worktree: it is done, and dropping no longer rolls it back.
     pub fn keep(mut self) {
         self.done = true;
+    }
+
+    /// Runs `publish`, the step that makes the worktree final, and keeps the
+    /// worktree if it succeeds: once published, it must stay whatever fails
+    /// next. `publish` must not fail after making it final.
+    pub fn commit<T>(self, publish: impl FnOnce() -> Result<T>) -> Result<T> {
+        let published = publish()?;
+        self.keep();
+        Ok(published)
     }
 }
 

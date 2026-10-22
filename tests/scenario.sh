@@ -233,6 +233,18 @@ touch ../wt7/x || fail "worktree of a read-only base is not writable"
 git mito update --force
 [[ -e $base ]] && fail "read-only base was not deleted"
 
+step "a base stays published when moving mito/base fails"
+# refs/heads/mito, a branch, keeps refs/heads/mito/base from being written.
+git branch -q -D mito/base
+git branch -q mito
+git mito update --force 2>../update-ref.log
+grep -q "warning: moving the mito/base branch" ../update-ref.log || fail "no warning about mito/base"
+assert_clean "$(readlink -f .mito/base)"
+git mito add --detach ../wt-ref
+git mito remove ../wt-ref
+git branch -q -D mito
+git mito update --force
+
 step "worktree bookkeeping is consistent"
 git worktree prune --dry-run -v 2>&1 | grep -q . && fail "stale worktree registrations"
 git fsck --no-progress
