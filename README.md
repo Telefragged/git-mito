@@ -111,8 +111,7 @@ Options:
 
 ## Configuration
 
-Optional, in `.mito.toml` at the root of the main worktree. It doesn't need to
-be tracked.
+Optional, in `.mito.toml` at the root of the main worktree.
 
 ```toml
 # Where mito keeps its state, relative to the repository root.
@@ -131,43 +130,28 @@ script in the repository (`./scripts/build.sh`), with the new base as its
 working directory. Its build outputs then come along in every worktree added
 from that base. Each base starts as a snapshot of the previous one, with all
 its files and build outputs, so a build there is incremental on what the last
-one left behind. If it fails, `update` stops and the previous base stays in
-place.
+one left behind.
 
-`update` does not fetch; run `git fetch` first to follow a remote, for example
+If it fails, `update` stops and the previous base stays in place.
+
+`update` does not fetch. Run `git fetch` first to follow a remote, for example
 with an alias for `git fetch && git mito update`.
-
-## Layout
-
-```text
-.mito/
-  base -> bases/<commit>   the current base
-  bases/<commit>/          one read-only subvolume per base, each a locked worktree
-  lock                     flock guarding the swap
-```
-
-A published base never changes (its subvolume is read-only), so its files,
-index and `HEAD` always agree.
-`add` holds `lock` shared while it reads `base` and copies from it; `update`
-holds it exclusively only to swap the symlink, then deletes old bases. mito
-adds the state directory to `.git/info/exclude`.
 
 ## Requirements and limitations
 
-- mito runs the `git` binary (tested with 2.56) for everything that writes a
-  worktree's files or index, so filters such as Git LFS and line-ending
-  conversion apply as usual. Reads go through gix, which can't read reftable
-  refs yet.
+- mito invokes the `git` binary (tested with 2.56) for everything that writes a
+  worktree's files or index.
 - The repository's worktrees and `.mito` must be on one btrfs filesystem.
 - Deleting a subvolume without root needs the `user_subvol_rm_allowed` mount
-  option. Without it mito falls back to deleting file by file, which is slow
+  option. Without it mito falls back to deleting file by file, which can be slow
   for large trees.
-- Subvolumes nested inside the base are not snapshotted with it; they show up
+- Subvolumes nested inside the base are not snapshotted with it. They show up
   empty in new worktrees.
-- Build tools that record absolute paths may rebuild in a new worktree, since
-  each worktree, and each base on-update runs in, lives at its own path.
-  Running the build under `bwrap` with the worktree bound to a stable path
-  works around this, in `on-update` and in the worktrees alike.
+- Some build tools, like `dotnet build` and `cmake`, use absolute paths to detect
+  modified files. Because each worktree has a new path these tools would start a
+  fresh rebuild every time. One way to work around this is to rebind the worktree
+  under a stable path, for example using `bwrap --bind ...`, both in `on-update`
+  and worktree.
 
 ## Development
 
