@@ -356,7 +356,7 @@ rec {
           }
           {
             name = "shlex";
-            packageId = "shlex";
+            packageId = "shlex 1.3.0";
           }
           {
             name = "syn";
@@ -760,7 +760,7 @@ rec {
           "usage" = [ "clap_builder/usage" ];
           "wrap_help" = [ "clap_builder/wrap_help" ];
         };
-        resolvedDefaultFeatures = [ "color" "default" "derive" "error-context" "help" "std" "suggestions" "usage" ];
+        resolvedDefaultFeatures = [ "color" "default" "derive" "error-context" "help" "std" "suggestions" "unstable-ext" "usage" ];
       };
       "clap_builder" = rec {
         crateName = "clap_builder";
@@ -799,7 +799,51 @@ rec {
           "unstable-v5" = [ "deprecated" ];
           "wrap_help" = [ "help" "dep:terminal_size" ];
         };
-        resolvedDefaultFeatures = [ "color" "error-context" "help" "std" "suggestions" "usage" ];
+        resolvedDefaultFeatures = [ "color" "error-context" "help" "std" "suggestions" "unstable-ext" "usage" ];
+      };
+      "clap_complete" = rec {
+        crateName = "clap_complete";
+        version = "4.6.11";
+        edition = "2024";
+        sha256 = "0brrz8vdgqg9c0dcdz69096dzmk18vv96l44gvzhlv93j8d2lzh3";
+        dependencies = [
+          {
+            name = "clap";
+            packageId = "clap";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "clap_lex";
+            packageId = "clap_lex";
+            optional = true;
+          }
+          {
+            name = "is_executable";
+            packageId = "is_executable";
+            optional = true;
+          }
+          {
+            name = "shlex";
+            packageId = "shlex 2.0.1";
+            optional = true;
+          }
+        ];
+        devDependencies = [
+          {
+            name = "clap";
+            packageId = "clap";
+            usesDefaultFeatures = false;
+            features = [ "std" "derive" "help" ];
+          }
+        ];
+        features = {
+          "debug" = [ "clap/debug" ];
+          "unstable-doc" = [ "unstable-dynamic" ];
+          "unstable-dynamic" = [ "dep:clap_lex" "dep:shlex" "dep:is_executable" "clap/unstable-ext" ];
+          "unstable-shell-tests" = [ "dep:completest" "dep:completest-pty" ];
+        };
+        resolvedDefaultFeatures = [ "default" "unstable-dynamic" ];
       };
       "clap_derive" = rec {
         crateName = "clap_derive";
@@ -1589,6 +1633,11 @@ rec {
             name = "clap";
             packageId = "clap";
             features = [ "derive" ];
+          }
+          {
+            name = "clap_complete";
+            packageId = "clap_complete";
+            features = [ "unstable-dynamic" ];
           }
           {
             name = "gix";
@@ -4078,6 +4127,24 @@ rec {
         };
         resolvedDefaultFeatures = [ "std" ];
       };
+      "is_executable" = rec {
+        crateName = "is_executable";
+        version = "1.0.6";
+        edition = "2021";
+        sha256 = "1gdqraq6f5vbfdsk7r9s2g08z9fwp50wc2327g36iaaxcygnmjw2";
+        authors = [
+          "Nick Fitzgerald <fitzgen@gmail.com>"
+        ];
+        dependencies = [
+          {
+            name = "windows-sys";
+            packageId = "windows-sys";
+            target = { target, features }: ("windows" == target."os" or null);
+            features = [ "Win32_Storage_FileSystem" ];
+          }
+        ];
+
+      };
       "is_terminal_polyfill" = rec {
         crateName = "is_terminal_polyfill";
         version = "1.70.2";
@@ -5397,11 +5464,29 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "std" ];
       };
-      "shlex" = rec {
+      "shlex 1.3.0" = rec {
         crateName = "shlex";
         version = "1.3.0";
         edition = "2015";
         sha256 = "0r1y6bv26c1scpxvhg2cabimrmwgbp4p3wy6syj9n0c4s3q2znhg";
+        authors = [
+          "comex <comexk@gmail.com>"
+          "Fenhl <fenhl@fenhl.net>"
+          "Adrian Taylor <adetaylor@chromium.org>"
+          "Alex Touchet <alextouchet@outlook.com>"
+          "Daniel Parks <dp+git@oxidized.org>"
+          "Garrett Berg <googberg@gmail.com>"
+        ];
+        features = {
+          "default" = [ "std" ];
+        };
+        resolvedDefaultFeatures = [ "default" "std" ];
+      };
+      "shlex 2.0.1" = rec {
+        crateName = "shlex";
+        version = "2.0.1";
+        edition = "2018";
+        sha256 = "1fjsll1cd7d2bcpdij9kd6w62rpbc7qqzvydvs021vsmr1cxvypq";
         authors = [
           "comex <comexk@gmail.com>"
           "Fenhl <fenhl@fenhl.net>"

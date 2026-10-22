@@ -2,6 +2,7 @@
 
 mod add;
 mod btrfs;
+mod completions;
 mod config;
 mod git;
 mod mito;
@@ -11,10 +12,10 @@ mod worktree;
 
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "git mito", version, about)]
+#[command(name = "git-mito", version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -28,6 +29,7 @@ enum Command {
 }
 
 fn main() -> ExitCode {
+    completions::complete(Cli::command);
     let cli = Cli::parse();
     let result = mito::Mito::discover().and_then(|mito| match cli.command {
         Command::Add(args) => add::run(&mito, args),

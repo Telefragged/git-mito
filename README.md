@@ -137,6 +137,18 @@ If it fails, `update` stops and the previous base stays in place.
 `update` does not fetch. Run `git fetch` first to follow a remote, for example
 with an alias for `git fetch && git mito update`.
 
+## Shell completion
+
+bash, zsh and fish complete both `git mito` and `git-mito`. The nix package
+installs the completions. Otherwise generate them at shell startup, so they
+always match the installed binary:
+
+```sh
+source <(COMPLETE=bash git-mito)   # ~/.bashrc
+source <(COMPLETE=zsh git-mito)    # ~/.zshrc, after compinit
+COMPLETE=fish git-mito | source    # ~/.config/fish/config.fish
+```
+
 ## Requirements and limitations
 
 - mito invokes the `git` binary (tested with 2.56) for everything that writes a
@@ -162,6 +174,7 @@ nix develop               # toolchain, crate2nix, libclang for bindgen
                           # (or `direnv allow` to load it on cd)
 cargo build
 tests/scenario.sh <empty-dir-on-btrfs>   # end-to-end, with git-mito on PATH
-nix flake check           # unit tests and a NixOS VM test (needs KVM)
+nix flake check           # unit tests, shell completions (tests/completions.sh)
+                          # and a NixOS VM test (needs KVM)
 crate2nix generate        # after changing dependencies; commit Cargo.nix
 ```
