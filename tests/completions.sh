@@ -12,9 +12,16 @@ set -euo pipefail
 prefix=$(realpath "$1")
 bash_completion=$2
 export PATH=$prefix/bin:$PATH XDG_DATA_DIRS=$prefix/share
-HOME=$(mktemp -d)
+HOME=$(realpath "$(mktemp -d)")
 export HOME
-cd "$HOME"
+
+# `remove` completes linked worktrees, but not bases.
+git init -q "$HOME/repo"
+cd "$HOME/repo"
+git -c user.name=t -c user.email=t commit -q --allow-empty -m init
+git worktree add -q ../b
+git worktree add -q .mito/worktrees/a
+git worktree add -q --detach .mito/bases/x
 
 # Each case is a command line, cursor at the end, and the expected matches.
 cases=(
@@ -23,6 +30,9 @@ cases=(
   'git mito re|remove'
   'git mito add --d|--detach'
   'git -C . mito up|update'
+  'git mito remove |../b .mito/worktrees/a --force --help'
+  'git mito remove .m|.mito/worktrees/a'
+  "git-mito remove /|$HOME/b $HOME/repo/.mito/worktrees/a"
 )
 
 # Calls the completion function bash would run for $1 and prints COMPREPLY.

@@ -139,9 +139,10 @@ with an alias for `git fetch && git mito update`.
 
 ## Shell completion
 
-bash, zsh and fish complete both `git mito` and `git-mito`. The nix package
-installs the completions. Otherwise generate them at shell startup, so they
-always match the installed binary:
+bash, zsh and fish complete both `git mito` and `git-mito`, including the
+repository's worktrees for `remove`. The nix package installs the
+completions. Otherwise generate them at shell startup, so they always match
+the installed binary:
 
 ```sh
 source <(COMPLETE=bash git-mito)   # ~/.bashrc
