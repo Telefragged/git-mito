@@ -39,13 +39,34 @@ _git-mito() {
 /// Prints a shell's registration script when `COMPLETE=<shell>` is set, or
 /// completions when the shell calls back; exits in both cases.
 pub fn complete(command: impl Fn() -> clap::Command) {
-    CompleteEnv::with_factory(command)
-        .shells(Shells(&[
-            &WithGit(&Bash, BASH_GLUE),
-            &Fish,
-            &WithGit(&Zsh, ZSH_GLUE),
-        ]))
-        .complete();
+    CompleteEnv::with_factory(|| {
+        let mut command = command();
+        // Adds the help and version flags, so they are hidden too.
+        command.build();
+        hide_flags(command)
+    })
+    .shells(Shells(&[
+        &WithGit(&Bash, BASH_GLUE),
+        &Fish,
+        &WithGit(&Zsh, ZSH_GLUE),
+    ]))
+    .complete();
+}
+
+/// Marks every flag hidden. A hidden candidate is offered only when no
+/// visible one matches (see `CompletionCandidate::hide`), so flags come up
+/// once a `-` is typed, or where nothing else completes, as in git's
+/// completion.
+fn hide_flags(command: clap::Command) -> clap::Command {
+    command
+        .mut_args(|arg| {
+            if arg.is_positional() {
+                arg
+            } else {
+                arg.hide(true)
+            }
+        })
+        .mut_subcommands(hide_flags)
 }
 
 /// A shell's completer, with glue appended to its registration that hooks

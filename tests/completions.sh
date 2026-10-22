@@ -24,13 +24,16 @@ git worktree add -q .mito/worktrees/a
 git worktree add -q --detach .mito/bases/x
 
 # Each case is a command line, cursor at the end, and the expected matches.
+# Flags only come up once a `-` is typed, or where nothing else completes.
 cases=(
-  'git-mito |add update remove help --help --version'
-  'git mito |add update remove help --help --version'
+  'git-mito |add update remove help'
+  'git mito |add update remove help'
+  'git mito remove --|--force --help'
+  'git mito update |--force --help'
   'git mito re|remove'
   'git mito add --d|--detach'
   'git -C . mito up|update'
-  'git mito remove |../b .mito/worktrees/a --force --help'
+  'git mito remove |../b .mito/worktrees/a'
   'git mito remove .m|.mito/worktrees/a'
   "git-mito remove /|$HOME/b $HOME/repo/.mito/worktrees/a"
 )
