@@ -252,6 +252,15 @@ git mito update --force >/dev/full 2>/dev/null || true
 assert_eq "$(ls .mito/bases | wc -l)" 1 "the old base is gone"
 assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "one base registered"
 
+step "concurrent updates to the same commit both succeed"
+git mito update --force >../update-a.log 2>&1 &
+pid=$!
+git mito update --force >../update-b.log 2>&1 || fail "an update failed: $(cat ../update-b.log)"
+wait "$pid" || fail "an update failed: $(cat ../update-a.log)"
+assert_clean "$(readlink -f .mito/base)"
+assert_eq "$(ls .mito/bases | wc -l)" 1 "replaced bases are deleted"
+assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "one base registered"
+
 step "worktree bookkeeping is consistent"
 git worktree prune --dry-run -v 2>&1 | grep -q . && fail "stale worktree registrations"
 git fsck --no-progress

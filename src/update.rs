@@ -39,7 +39,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         return Ok(());
     }
 
-    let id = unused_id(mito, &short_target);
+    let id = claim_id(mito, &short_target)?;
     let path = mito.bases_dir().join(&id);
     // Locked, so that `git worktree remove` and `prune` leave it alone.
     let git_args: Vec<OsString> = ["--detach", "--lock", "--reason", "managed by git-mito"]
@@ -49,7 +49,11 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         .collect();
     // Rolls the new base back if anything fails or it is discarded, until it
     // is kept once published.
-    let mut pending = worktree::clone(&mito.repo, &mito.root, &git_args, &path, source.as_ref())?;
+    let mut pending = worktree::clone(&mito.repo, &mito.root, &git_args, &path, source.as_ref())
+        // Once registered, the rollback deletes the directory itself.
+        .inspect_err(|_| {
+            let _ = fs::remove_dir(&path);
+        })?;
     drop(guard);
     pending.checkout()?;
 
@@ -144,14 +148,23 @@ fn resolve_track(mito: &Mito) -> Result<gix::ObjectId> {
     }
 }
 
-/// `stem`, suffixed with `.1`, `.2`, … if a base already uses it, as when
-/// `--force` rebuilds the current commit.
-fn unused_id(mito: &Mito, stem: &str) -> String {
-    let mut id = stem.to_owned();
-    let mut n = 1;
-    while mito.bases_dir().join(&id).exists() {
-        id = format!("{stem}.{n}");
-        n += 1;
+/// Claims an id for a new base by creating its directory, which only one
+/// update can do: `stem`, suffixed with `.1`, `.2`, … if a base already uses
+/// it, as when `--force` rebuilds the current commit or another update
+/// builds the same one concurrently.
+fn claim_id(mito: &Mito, stem: &str) -> Result<String> {
+    for n in 0.. {
+        let id = if n == 0 {
+            stem.to_owned()
+        } else {
+            format!("{stem}.{n}")
+        };
+        let path = mito.bases_dir().join(&id);
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(id),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e).with_context(|| format!("creating {}", path.display())),
+        }
     }
-    id
+    unreachable!("ids run out")
 }
