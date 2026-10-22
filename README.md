@@ -147,6 +147,8 @@ with an alias for `git fetch && git mito update`.
   for large trees.
 - Subvolumes nested inside the base are not snapshotted with it. They show up
   empty in new worktrees.
+- Submodules must not be initialized in the base. Run
+  `git submodule update --init` in each new worktree instead.
 - Some build tools, like `dotnet build` and `cmake`, use absolute paths to detect
   modified files. Because each worktree has a new path these tools would start a
   fresh rebuild every time. One way to work around this is to rebind the worktree
