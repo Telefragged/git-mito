@@ -177,6 +177,54 @@ assert_eq "$(ls .mito/bases | wc -l)" 1 "failed base deleted"
 assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "failed base unregistered"
 mv ../mito.toml.good .mito.toml
 
+step "concurrent updates: the newer revision wins, not the last to finish"
+# A commit holding a `hold` file has a warm-up that signals on the `started`
+# FIFO, then blocks reading `release` until the test lets it go.
+mkfifo ../started ../release
+mv .mito.toml ../mito.toml.saved
+cat >.mito.toml <<TOML
+[base]
+track = "tracked"
+warm = "if [ -e hold ]; then echo >'$work/started'; read -r _ <'$work/release'; fi"
+TOML
+base_commit() { git -C "$(readlink -f .mito/base)" rev-parse HEAD; }
+# Commits a held commit and a free one on top, and starts updating to the held
+# one in the background (logging to $1). Returns once that update is in its
+# warm-up, so it has resolved the held commit.
+race() {
+  touch hold && git add hold && git commit -qm held
+  held=$(git rev-parse HEAD)
+  git rm -q hold && git commit -qm free
+  free=$(git rev-parse HEAD)
+  git branch -f tracked "$held"
+  git mito update >"$1" 2>&1 &
+  pid=$!
+  read -r _ <../started
+}
+
+race ../update-overtaken.log
+git branch -f tracked "$free"
+git mito update
+echo >../release
+wait "$pid"
+assert_eq "$(base_commit)" "$free" "the newer base stays published"
+grep -q "Discarded" ../update-overtaken.log || fail "the older, held update didn't discard its base"
+assert_eq "$(ls .mito/bases | wc -l)" 1 "the discarded base is gone"
+
+# With no other update running, a base the ref moved past still publishes,
+# since it's ahead of the published one; the next update catches up.
+race ../update-ahead.log
+git branch -f tracked "$free"
+echo >../release
+wait "$pid"
+assert_eq "$(base_commit)" "$held" "an update ahead of the base publishes"
+git mito update
+assert_eq "$(base_commit)" "$free" "the next update catches up"
+assert_eq "$(ls .mito/bases | wc -l)" 1 "replaced bases are deleted"
+mv ../mito.toml.saved .mito.toml
+git branch -q -D tracked
+rm ../started ../release
+
 step "bases are read-only, their worktrees are not"
 base=$(readlink -f .mito/base)
 touch "$base/x" 2>/dev/null && fail "base is writable"

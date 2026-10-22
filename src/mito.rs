@@ -6,15 +6,15 @@
 //!                        <id> is the base's short commit, suffixed `.N` if
 //!                        that commit is rebuilt
 //!   bases/<id>/          one btrfs subvolume per base, each a git worktree
-//!   lock                 flock guarding `base` against deletion races
-//!   update.lock          flock serialising `git mito update`
+//!   lock                 flock guarding the swap of `base`
 //! ```
 //!
 //! A base never changes once `base` points at it, so its files, index and
-//! `HEAD` always agree. `add` holds `lock` shared from reading `base` until it
-//! has copied the base; `update` holds it exclusively only to swap `base`.
-//! Once that exclusive lock has been taken, no `add` can still be reading an
-//! older base, so older bases can be deleted without holding any lock.
+//! `HEAD` always agree. Anything copying a base (`add`, `update`) holds `lock`
+//! shared from reading `base` until the copy is made. `update` holds it
+//! exclusively only to decide on and make the swap, the one point where
+//! concurrent updates meet; nothing can still be reading the base it
+//! replaces, so it deletes that base afterwards without the lock.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -23,9 +23,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use nix::fcntl::{Flock, FlockArg};
 
-use crate::btrfs;
 use crate::config::Config;
-use crate::worktree;
+use crate::git;
 
 pub struct Mito {
     /// The repository of the worktree mito was run in.
@@ -80,15 +79,24 @@ impl Mito {
         }
     }
 
-    /// Makes `bases/<id>` the current base, atomically.
-    pub fn publish_base(&self, id: &str) -> Result<()> {
+    /// Makes `bases/<id>`, at `commit`, the current base: swaps the base
+    /// pointer atomically and moves the `mito/base` branch to match.
+    pub fn publish_base(&self, id: &str, commit: gix::ObjectId) -> Result<()> {
         let tmp = self.dir.join("base.tmp");
         let _ = fs::remove_file(&tmp);
         std::os::unix::fs::symlink(Path::new("bases").join(id), &tmp)?;
-        fs::rename(&tmp, self.base_link()).context("swapping the base pointer")
+        fs::rename(&tmp, self.base_link()).context("swapping the base pointer")?;
+        self.repo.reference(
+            "refs/heads/mito/base",
+            commit,
+            gix::refs::transaction::PreviousValue::Any,
+            format!("mito: update base to {}", git::short(&commit)),
+        )?;
+        Ok(())
     }
 
-    /// Takes the lock that keeps the base `add` reads from being deleted.
+    /// Takes the lock guarding `base`: shared while reading and copying the
+    /// base, exclusive to swap it.
     pub fn lock_base(&self, exclusive: bool) -> Result<Flock<File>> {
         let arg = if exclusive {
             FlockArg::LockExclusive
@@ -96,15 +104,6 @@ impl Mito {
             FlockArg::LockShared
         };
         lock(&self.dir.join("lock"), arg)
-    }
-
-    /// Takes the lock serialising updates, failing if one is running.
-    pub fn lock_update(&self) -> Result<Flock<File>> {
-        lock(
-            &self.dir.join("update.lock"),
-            FlockArg::LockExclusiveNonblock,
-        )
-        .context("another `git mito update` is running")
     }
 
     /// Adds the state directory to `info/exclude` when it lives inside the
@@ -129,30 +128,6 @@ impl Mito {
             writeln!(file)?;
         }
         writeln!(file, "{pattern}")?;
-        Ok(())
-    }
-
-    /// Deletes every base but the current one, along with its worktree
-    /// registration. Only `update` calls this, under the update lock.
-    pub fn collect_garbage(&self) -> Result<()> {
-        let current = self.current_base()?;
-        let bases = self.bases_dir();
-        let stale = |path: &Path| path.starts_with(&bases) && Some(path) != current.as_deref();
-        for worktree in self.repo.worktrees()? {
-            let path = worktree.base()?;
-            if stale(&path) {
-                worktree::destroy(&self.root, &path)?;
-            }
-        }
-        // Whatever an interrupted `update` left behind unregistered.
-        if let Ok(entries) = fs::read_dir(&bases) {
-            for entry in entries {
-                let path = entry?.path();
-                if stale(&path) {
-                    btrfs::delete_tree(&path)?;
-                }
-            }
-        }
         Ok(())
     }
 }

@@ -18,7 +18,9 @@ git mito remove ../feature
 - `git mito update [--force]` builds a new base at the tracked revision next to
   the current one, runs the warm-up command in it if one is configured, and
   swaps it in atomically; `add` keeps working meanwhile. The branch
-  `mito/base` is moved to the base's commit.
+  `mito/base` is moved to the base's commit. Updates may run concurrently:
+  each swaps in its base only if the tracked revision still names it, or if
+  it is ahead of the base published by then, and discards it otherwise.
 - `git mito add [-b <branch> | -B <branch> | --detach] [--lock] <path> [<commit-ish>]`
   takes `git worktree add`'s options and resolves them the same way, so it
   defaults to `HEAD`. When that isn't the base's commit, the difference from
@@ -59,7 +61,7 @@ with an alias for `git fetch && git mito update`.
 .mito/
   base -> bases/<commit>   the current base
   bases/<commit>/          one read-only subvolume per base, each a locked worktree
-  lock, update.lock        flocks
+  lock                     flock guarding the swap
 ```
 
 A published base never changes (its subvolume is read-only), so its files,

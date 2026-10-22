@@ -87,9 +87,10 @@ pub fn run(mito: &Mito, args: AddArgs) -> Result<()> {
     git_args.push(path.clone().into());
     git_args.extend(args.commitish.map(OsString::from));
 
-    let pending = worktree::clone(&mito.repo, &cwd, &git_args, &path, Some(&source))?;
+    let mut pending = worktree::clone(&mito.repo, &cwd, &git_args, &path, Some(&source))?;
     drop(guard);
     let head = pending.checkout()?;
+    pending.keep();
     let path = path.canonicalize()?;
     println!(
         "Created worktree {} at {}",

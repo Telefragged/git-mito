@@ -31,10 +31,10 @@ impl<'a> Source<'a> {
     }
 }
 
-/// A worktree registered with git whose files aren't checked out yet. If it
-/// is dropped before [`Pending::checkout`] succeeds, it rolls everything
-/// back: the worktree, its registration, and whatever `git worktree add` did
-/// to its branch.
+/// A worktree registered with git that isn't finished yet. Unless
+/// [`Pending::keep`] is called, dropping it rolls everything back: the
+/// worktree, its registration, and whatever `git worktree add` did to its
+/// branch.
 pub struct Pending {
     /// Where git runs.
     dir: PathBuf,
@@ -102,7 +102,7 @@ impl Pending {
 
     /// Brings the files to HEAD with `git reset --hard`, which touches only
     /// what differs from the source. Returns HEAD.
-    pub fn checkout(mut self) -> Result<gix::ObjectId> {
+    pub fn checkout(&mut self) -> Result<gix::ObjectId> {
         let head = git::head(&self.repo)?;
         match self.source_commit {
             Some(base) if base == head => {}
@@ -118,8 +118,12 @@ impl Pending {
                 git::run(&self.path, ["reset", "--hard", "--quiet"])?;
             }
         }
-        self.done = true;
         Ok(head)
+    }
+
+    /// Keeps the worktree: it is done, and dropping no longer rolls it back.
+    pub fn keep(mut self) {
+        self.done = true;
     }
 }
 

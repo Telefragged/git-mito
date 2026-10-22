@@ -26,21 +26,20 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     fs::create_dir_all(mito.bases_dir())?;
     btrfs::ensure_btrfs(&mito.dir)?;
     mito.ensure_excluded()?;
-    let _update = mito.lock_update()?;
-    mito.collect_garbage()?;
 
     let target = resolve_track(mito)?;
+    let short_target = short(&target);
+    // Held while the current base is read and copied, as in `add`.
+    let guard = mito.lock_base(false)?;
     let current = mito.current_base()?;
     let source = current.as_deref().map(Source::open).transpose()?;
-    if let Some(source) = &source
-        && source.commit == target
-        && !args.force
-    {
-        println!("Base is already at {}", short(&target));
+    let current_commit = source.as_ref().map(|s| s.commit);
+    if current_commit == Some(target) && !args.force {
+        println!("Base is already at {short_target}");
         return Ok(());
     }
 
-    let id = unused_id(mito, &short(&target));
+    let id = unused_id(mito, &short_target);
     let path = mito.bases_dir().join(&id);
     // Locked, so that `git worktree remove` and `prune` leave it alone.
     let git_args: Vec<OsString> = ["--detach", "--lock", "--reason", "managed by git-mito"]
@@ -48,33 +47,76 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         .into_iter()
         .chain([path.clone().into(), target.to_string().into()])
         .collect();
-    worktree::clone(&mito.repo, &mito.root, &git_args, &path, source.as_ref())?.checkout()?;
+    // Rolls the new base back if anything fails or it is discarded, until it
+    // is kept once published.
+    let mut pending = worktree::clone(&mito.repo, &mito.root, &git_args, &path, source.as_ref())?;
+    drop(guard);
+    pending.checkout()?;
 
-    if let Some(command) = &mito.config.base.warm
-        && let Err(e) = warm(command, &path)
-    {
-        let _ = worktree::destroy(&mito.root, &path);
-        return Err(e);
+    // The base published by now; the commit is read again only if it changed.
+    let published = |path: Option<&Path>| -> Result<Option<gix::ObjectId>> {
+        match path {
+            Some(p) if Some(p) == current.as_deref() => Ok(current_commit),
+            Some(p) => Ok(Some(git::head(&git::open(p)?)?)),
+            None => Ok(None),
+        }
+    };
+    // Don't spend a warm-up on a base that has already lost.
+    let early = published(mito.current_base()?.as_deref())?;
+    if let Some(winner) = loses_to(&mito.repo, resolve_track(mito)?, target, early)? {
+        discarded(&short_target, winner);
+        return Ok(());
     }
-
+    if let Some(command) = &mito.config.base.warm {
+        warm(command, &path)?;
+    }
     // A published base must never change: its files, index and HEAD have to
     // keep agreeing for every worktree cloned from it.
     btrfs::set_read_only(&path, true)?;
-    {
-        let _lock = mito.lock_base(true)?;
-        mito.publish_base(&id)?;
-    }
-    let message = format!("mito: update base to {}", short(&target));
-    mito.repo.reference(
-        "refs/heads/mito/base",
-        target,
-        gix::refs::transaction::PreviousValue::Any,
-        message,
-    )?;
-    println!("Base updated to {} at {}", short(&target), path.display());
 
-    // Nothing can be reading the old base any more.
-    mito.collect_garbage()
+    let tracked = resolve_track(mito)?;
+    let lock = mito.lock_base(true)?;
+    let old = mito.current_base()?;
+    if let Some(winner) = loses_to(&mito.repo, tracked, target, published(old.as_deref())?)? {
+        drop(lock);
+        discarded(&short_target, winner);
+        return Ok(());
+    }
+    mito.publish_base(&id, target)?;
+    drop(lock);
+    pending.keep();
+    println!("Base updated to {short_target} at {}", path.display());
+    // Swapped under the exclusive lock, so nothing still reads the old base.
+    if let Some(old) = old {
+        worktree::destroy(&mito.root, &old)?;
+    }
+    Ok(())
+}
+
+fn discarded(target: &str, winner: gix::ObjectId) {
+    let winner = short(&winner);
+    println!(
+        "Discarded the base at {target}: {winner} was published meanwhile, and {target} isn't ahead of it"
+    );
+}
+
+/// The published commit a base at `target` loses to, if any. It wins when
+/// nothing is published, when the tracked revision is still `target` (the
+/// common case), or when `target` is strictly ahead of `published` in history.
+fn loses_to(
+    repo: &gix::Repository,
+    tracked: gix::ObjectId,
+    target: gix::ObjectId,
+    published: Option<gix::ObjectId>,
+) -> Result<Option<gix::ObjectId>> {
+    let Some(published) = published else {
+        return Ok(None);
+    };
+    let ahead = published != target
+        && repo
+            .merge_base(published, target)?
+            .is_some_and(|base| base == published);
+    Ok((tracked != target && !ahead).then_some(published))
 }
 
 /// Runs the warm-up `command` in the new base at `path`. The base is a
