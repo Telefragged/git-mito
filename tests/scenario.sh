@@ -293,6 +293,23 @@ assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "interrupted base u
 mv ../mito.toml.saved .mito.toml
 rm ../started
 
+step "a same-sized change by on-update shows in worktrees"
+# Within the second `reset --hard` wrote the index, so git can't tell from the
+# file's mtime against the worktree's copy of the index, which is newer; only
+# the base's index, refreshed after on-update, records the change.
+cp .mito.toml ../mito.toml.saved
+printf '[base]\non-update = "echo CHANGED >keep"\n' >.mito.toml
+git mito update --force
+sleep 1
+git mito add --detach ../wt-racy
+assert_eq "$(git -C ../wt-racy status --porcelain)" " M keep" "wt-racy sees on-update's change"
+git mito remove --force ../wt-racy
+mv ../mito.toml.saved .mito.toml
+# Rebuilt at the same commit, a base keeps on-update's changes; a new commit
+# resets them.
+git commit -q --allow-empty -m racy
+git mito update
+
 step "worktree bookkeeping is consistent"
 git worktree prune --dry-run -v 2>&1 | grep -q . && fail "stale worktree registrations"
 git fsck --no-progress
