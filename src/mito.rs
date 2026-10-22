@@ -31,6 +31,7 @@ use nix::fcntl::{Flock, FlockArg};
 
 use crate::config::Config;
 use crate::git;
+use crate::worktree::Retired;
 
 pub struct Mito {
     /// The repository of the worktree mito was run in.
@@ -85,12 +86,14 @@ impl Mito {
     }
 
     /// Makes `bases/<id>` the current base by swapping the base pointer
-    /// atomically, its last step.
-    pub fn publish_base(&self, _lock: &ExclusiveBaseLock, id: &str) -> Result<()> {
+    /// atomically, its last step. Returns the base it replaced, which nothing
+    /// reads any more, to be deleted.
+    pub fn publish_base(&self, lock: &ExclusiveBaseLock, id: &str) -> Result<Option<Retired>> {
         let tmp = self.dir.join("base.tmp");
         let _ = fs::remove_file(&tmp);
         std::os::unix::fs::symlink(Path::new("bases").join(id), &tmp)?;
-        fs::rename(&tmp, self.base_link()).context("swapping the base pointer")
+        fs::rename(&tmp, self.base_link()).context("swapping the base pointer")?;
+        Ok(lock.base.clone().map(|old| Retired::new(&self.root, old)))
     }
 
     /// Moves the `mito/base` branch to `commit`, the current base's. Under

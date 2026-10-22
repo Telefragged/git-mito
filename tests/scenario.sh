@@ -245,6 +245,13 @@ git mito remove ../wt-ref
 git branch -q -D mito
 git mito update --force
 
+step "update deletes the old base even if reporting fails"
+# Writing to a full device fails, which made `println!` panic before the
+# old base was deleted.
+git mito update --force >/dev/full 2>/dev/null || true
+assert_eq "$(ls .mito/bases | wc -l)" 1 "the old base is gone"
+assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "one base registered"
+
 step "worktree bookkeeping is consistent"
 git worktree prune --dry-run -v 2>&1 | grep -q . && fail "stale worktree registrations"
 git fsck --no-progress

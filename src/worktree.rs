@@ -152,6 +152,39 @@ impl Drop for Pending {
     }
 }
 
+/// A worktree to delete, as a base once replaced. It is deleted when
+/// dropped, so that nothing failing or panicking first leaves it behind;
+/// [`Retired::destroy`] deletes it and reports errors.
+pub struct Retired {
+    /// Where git runs.
+    dir: PathBuf,
+    path: Option<PathBuf>,
+}
+
+impl Retired {
+    pub fn new(dir: &Path, path: PathBuf) -> Self {
+        Self {
+            dir: dir.to_owned(),
+            path: Some(path),
+        }
+    }
+
+    pub fn destroy(mut self) -> Result<()> {
+        match self.path.take() {
+            Some(path) => destroy(&self.dir, &path),
+            None => Ok(()),
+        }
+    }
+}
+
+impl Drop for Retired {
+    fn drop(&mut self) {
+        if let Some(path) = self.path.take() {
+            let _ = destroy(&self.dir, &path);
+        }
+    }
+}
+
 /// Deletes the worktree at `path`, its subvolume in one step where
 /// permitted, and unregisters it, even if locked.
 pub fn destroy(dir: &Path, path: &Path) -> Result<()> {

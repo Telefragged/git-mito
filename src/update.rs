@@ -9,7 +9,7 @@ use crate::btrfs;
 use crate::git;
 use crate::git::short;
 use crate::mito::Mito;
-use crate::worktree::{self, Source};
+use crate::worktree::{self, Retired, Source};
 
 /// Move the base to the tracked revision, creating it if needed.
 ///
@@ -76,13 +76,13 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
 
     let tracked = resolve_track(mito)?;
     let lock = mito.lock_base_exclusive()?;
-    let old = lock.base.clone();
-    if let Some(winner) = loses_to(&mito.repo, tracked, target, published(old.as_deref())?)? {
+    let old = published(lock.base.as_deref())?;
+    if let Some(winner) = loses_to(&mito.repo, tracked, target, old)? {
         drop(lock);
         discarded(&short_target, winner);
         return Ok(());
     }
-    pending.commit(|| mito.publish_base(&lock, &id))?;
+    let retired = pending.commit(|| mito.publish_base(&lock, &id))?;
     // The branch only mirrors the base, so failing to move it is no reason
     // to fail the update.
     if let Err(e) = mito.set_base_ref(&lock, target) {
@@ -90,11 +90,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     }
     drop(lock);
     println!("Base updated to {short_target} at {}", path.display());
-    // Swapped under the exclusive lock, so nothing still reads the old base.
-    if let Some(old) = old {
-        worktree::destroy(&mito.root, &old)?;
-    }
-    Ok(())
+    retired.map_or(Ok(()), Retired::destroy)
 }
 
 fn discarded(target: &str, winner: gix::ObjectId) {
