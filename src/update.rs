@@ -74,6 +74,12 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     if let Some(command) = &mito.config.base.on_update {
         on_update(command, &path)?;
     }
+    // Worktrees copy only the index file, so it must not be a split index,
+    // which refers to a shared index file beside it. A worktree's index is
+    // split again the next time git writes it, if core.splitIndex is set.
+    if pending.has_split_index()? {
+        git::run(&path, ["update-index", "--no-split-index"])?;
+    }
     // A published base must never change: its files, index and HEAD have to
     // keep agreeing for every worktree cloned from it.
     btrfs::set_read_only(&path, true)?;

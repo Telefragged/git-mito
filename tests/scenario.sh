@@ -261,6 +261,21 @@ assert_clean "$(readlink -f .mito/base)"
 assert_eq "$(ls .mito/bases | wc -l)" 1 "replaced bases are deleted"
 assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "one base registered"
 
+step "a split index carries over"
+# A new commit, so that `reset --hard` writes the base's index split, as
+# the shared index it leaves beside it shows.
+git config core.splitIndex true
+git commit -q --allow-empty -m split
+git mito update
+ls .git/worktrees/"$(basename "$(readlink .mito/base)")"/sharedindex.* >/dev/null ||
+  fail "the base's index was never split"
+git mito add --detach ../wt-split
+assert_clean ../wt-split
+git mito remove ../wt-split
+git config --unset core.splitIndex
+git commit -q --allow-empty -m unsplit
+git mito update
+
 step "worktree bookkeeping is consistent"
 git worktree prune --dry-run -v 2>&1 | grep -q . && fail "stale worktree registrations"
 git fsck --no-progress

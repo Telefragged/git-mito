@@ -100,6 +100,24 @@ impl Pending {
         Ok(())
     }
 
+    /// Whether git has written the worktree's index split. Its gitdir is new,
+    /// so a shared index in it can only be one git wrote for this index.
+    pub fn has_split_index(&self) -> Result<bool> {
+        let gitdir = self.repo.git_dir();
+        for entry in
+            fs::read_dir(gitdir).with_context(|| format!("reading {}", gitdir.display()))?
+        {
+            if entry?
+                .file_name()
+                .as_encoded_bytes()
+                .starts_with(b"sharedindex.")
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Brings the files to HEAD with `git reset --hard`, which touches only
     /// what differs from the source. Returns HEAD.
     pub fn checkout(&mut self) -> Result<gix::ObjectId> {
