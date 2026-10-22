@@ -13,21 +13,101 @@ git mito add ../feature  # like `git worktree add`, but a snapshot of the base
 git mito remove ../feature
 ```
 
+## Performance
+
+Measured on an ADATA SX8200PNP NVMe SSD with btrfs (Linux 7.2.11,
+btrfs-progs 7.1, `compress=zstd:3`) and an AMD Ryzen 9 9950X3D, with a warm
+page cache:
+
+| | `git worktree add` | `git mito add` |
+|---|---|---|
+| Create a worktree in a repository with 72,867 commits, a 1.2 GB `.git` and about 1 GiB of checked-out files | 1.60 s | 5.1 ms |
+| `cargo t` in a new git-mito worktree after a one-line change, with `cargo build --all-targets` as the warm-up | 7.2 s | 0.9 s |
+
 ## Commands
 
-- `git mito update [--force]` builds a new base at the tracked revision next to
-  the current one, runs the warm-up command in it if one is configured, and
-  swaps it in atomically; `add` keeps working meanwhile. The branch
-  `mito/base` is moved to the base's commit. Updates may run concurrently:
-  each swaps in its base only if the tracked revision still names it, or if
-  it is ahead of the base published by then, and discards it otherwise.
-- `git mito add [-b <branch> | -B <branch> | --detach] [--lock] <path> [<commit-ish>]`
-  takes `git worktree add`'s options and resolves them the same way, so it
-  defaults to `HEAD`. When that isn't the base's commit, the difference from
-  the base is checked out; run `update` regularly to keep it small.
-- `git mito remove [--force] <path>` deletes the worktree's subvolume in one
-  step where permitted. `git worktree remove` also works, deleting file by
-  file.
+### `git mito update`
+
+```text
+Move the base to the tracked revision, creating it if needed.
+
+The new base is built beside the current one and swapped in atomically, so `git mito add` keeps working throughout.
+
+Usage: git-mito update [OPTIONS]
+
+Options:
+  -f, --force
+          Rebuild the base even if it is already at the tracked revision
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+### `git mito add`
+
+```text
+Create a worktree by snapshotting the base.
+
+Takes `git worktree add`'s options and resolves them the same way. A <commit-ish> other than the base's checks out the difference from it.
+
+Usage: git-mito add [OPTIONS] <PATH> [commit-ish]
+
+Arguments:
+  <PATH>
+
+
+  [commit-ish]
+
+
+Options:
+  -b <new-branch>
+          Create a new branch named <new-branch> starting at <commit-ish>
+
+  -B <new-branch>
+          Like -b, but reset <new-branch> to <commit-ish> if it exists
+
+  -d, --detach
+          Detach HEAD in the new worktree
+
+  -f, --force
+          Check out a branch even if another worktree has it checked out
+
+      --lock
+          Keep the new worktree locked after creation
+
+      --reason <REASON>
+          Reason for --lock
+
+      --track
+          Set up tracking for a new branch (see git-branch(1))
+
+      --no-track
+
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+### `git mito remove`
+
+```text
+Remove a worktree, deleting its subvolume in one step where permitted.
+
+`git worktree remove` works on mito worktrees too, but deletes them file by file.
+
+Usage: git-mito remove [OPTIONS] <WORKTREE>
+
+Arguments:
+  <WORKTREE>
+
+
+Options:
+  -f, --force
+          Remove even if the worktree is dirty or locked
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
 
 ## Configuration
 
