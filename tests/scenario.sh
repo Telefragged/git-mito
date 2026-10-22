@@ -276,6 +276,23 @@ git config --unset core.splitIndex
 git commit -q --allow-empty -m unsplit
 git mito update
 
+step "an interrupted update rolls back its base"
+mkfifo ../started
+cp .mito.toml ../mito.toml.saved
+printf '[base]\non-update = "echo >%q; sleep 30"\n' "$work/started" >.mito.toml
+base=$(readlink -f .mito/base)
+# In its own process group, which a terminal's Ctrl-C signals as a whole.
+setsid git-mito update --force >../update-int.log 2>&1 &
+pid=$!
+read -r _ <../started
+kill -TERM -- -"$pid"
+wait "$pid" && fail "an interrupted update succeeded"
+assert_eq "$(readlink -f .mito/base)" "$base" "base pointer unchanged"
+assert_eq "$(ls .mito/bases | wc -l)" 1 "interrupted base deleted"
+assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "interrupted base unregistered"
+mv ../mito.toml.saved .mito.toml
+rm ../started
+
 step "worktree bookkeeping is consistent"
 git worktree prune --dry-run -v 2>&1 | grep -q . && fail "stale worktree registrations"
 git fsck --no-progress

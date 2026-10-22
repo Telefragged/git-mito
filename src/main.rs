@@ -7,6 +7,7 @@ mod config;
 mod git;
 mod mito;
 mod remove;
+mod signal;
 mod update;
 mod worktree;
 
@@ -31,11 +32,13 @@ enum Command {
 fn main() -> ExitCode {
     completions::complete(Cli::command);
     let cli = Cli::parse();
-    let result = mito::Mito::discover().and_then(|mito| match cli.command {
-        Command::Add(args) => add::run(&mito, args),
-        Command::Update(args) => update::run(&mito, &args),
-        Command::Remove(args) => remove::run(&mito, &args),
-    });
+    let result = signal::install()
+        .and_then(|()| mito::Mito::discover())
+        .and_then(|mito| match cli.command {
+            Command::Add(args) => add::run(&mito, args),
+            Command::Update(args) => update::run(&mito, &args),
+            Command::Remove(args) => remove::run(&mito, &args),
+        });
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

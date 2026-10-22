@@ -90,7 +90,7 @@ pub fn run(mito: &Mito, args: AddArgs) -> Result<()> {
     let mut pending = worktree::clone(&mito.repo, &cwd, &git_args, &path, Some(&source))?;
     drop(guard);
     let head = pending.checkout()?;
-    pending.keep();
+    pending.keep()?;
     let path = path.canonicalize()?;
     println!(
         "Created worktree {} at {}",

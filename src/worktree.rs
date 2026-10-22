@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 
 use crate::btrfs;
 use crate::git;
+use crate::signal;
 
 /// The base a worktree is cloned from.
 pub struct Source<'a> {
@@ -160,16 +161,18 @@ impl Pending {
     }
 
     /// Keeps the worktree: it is done, and dropping no longer rolls it back.
-    pub fn keep(mut self) {
-        self.done = true;
+    pub fn keep(self) -> Result<()> {
+        self.commit(|| Ok(()))
     }
 
     /// Runs `publish`, the step that makes the worktree final, and keeps the
     /// worktree if it succeeds: once published, it must stay whatever fails
-    /// next. `publish` must not fail after making it final.
-    pub fn commit<T>(self, publish: impl FnOnce() -> Result<T>) -> Result<T> {
+    /// next. `publish` must not fail after making it final. Neither happens
+    /// once mito has been interrupted.
+    pub fn commit<T>(mut self, publish: impl FnOnce() -> Result<T>) -> Result<T> {
+        signal::check()?;
         let published = publish()?;
-        self.keep();
+        self.done = true;
         Ok(published)
     }
 }

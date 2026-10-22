@@ -9,6 +9,7 @@ use crate::btrfs;
 use crate::git;
 use crate::git::short;
 use crate::mito::Mito;
+use crate::signal;
 use crate::worktree::{self, Retired, Source};
 
 /// Move the base to the tracked revision, creating it if needed.
@@ -72,6 +73,8 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         return Ok(());
     }
     if let Some(command) = &mito.config.base.on_update {
+        // Not worth starting once interrupted.
+        signal::check()?;
         on_update(command, &path)?;
     }
     // Worktrees copy only the index file, so it must not be a split index,

@@ -1648,7 +1648,7 @@ rec {
           {
             name = "nix";
             packageId = "nix";
-            features = [ "fs" "ioctl" ];
+            features = [ "fs" "ioctl" "signal" ];
           }
           {
             name = "serde";
@@ -4614,7 +4614,7 @@ rec {
           "user" = [ "feature" ];
           "zerocopy" = [ "fs" "uio" ];
         };
-        resolvedDefaultFeatures = [ "default" "fs" "ioctl" ];
+        resolvedDefaultFeatures = [ "default" "fs" "ioctl" "process" "signal" ];
       };
       "nom" = rec {
         crateName = "nom";
