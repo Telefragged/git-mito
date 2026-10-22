@@ -11,3 +11,15 @@ gix = { version = "0.90", default-features = false, features = ["sha1", "revisio
 nix = { version = "0.31", features = ["fs", "ioctl"] }
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "0.9"
+
+[lints.clippy]
+# A group needs a lower priority than the single lints below, or clippy's
+# lint_groups_priority fails the build: Cargo ignores the table's order.
+pedantic = { level = "warn", priority = -1 }
+# Suppressions must be #[expect] (flagged when stale) and say why.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+
+[lints.rust]
+# Warnings are errors everywhere: local cargo and the nix build alike.
+warnings = "deny"

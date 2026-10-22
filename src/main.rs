@@ -31,8 +31,8 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = mito::Mito::discover().and_then(|mito| match cli.command {
         Command::Add(args) => add::run(&mito, args),
-        Command::Update(args) => update::run(&mito, args),
-        Command::Remove(args) => remove::run(&mito, args),
+        Command::Update(args) => update::run(&mito, &args),
+        Command::Remove(args) => remove::run(&mito, &args),
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,

@@ -12,6 +12,10 @@ use crate::worktree::{self, Source};
 /// Takes `git worktree add`'s options and resolves them the same way. A
 /// <commit-ish> other than the base's checks out the difference from it.
 #[derive(clap::Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is an independent `git worktree add` flag"
+)]
 pub struct AddArgs {
     /// Create a new branch named <new-branch> starting at <commit-ish>.
     #[arg(short = 'b', value_name = "new-branch", conflicts_with_all = ["force_branch", "detach"])]

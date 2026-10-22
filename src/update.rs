@@ -23,7 +23,7 @@ pub struct UpdateArgs {
     force: bool,
 }
 
-pub fn run(mito: &Mito, args: UpdateArgs) -> Result<()> {
+pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     fs::create_dir_all(mito.bases_dir())?;
     btrfs::ensure_btrfs(&mito.dir)?;
     mito.ensure_excluded()?;

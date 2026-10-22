@@ -18,7 +18,7 @@ pub struct RemoveArgs {
     worktree: PathBuf,
 }
 
-pub fn run(mito: &Mito, args: RemoveArgs) -> Result<()> {
+pub fn run(mito: &Mito, args: &RemoveArgs) -> Result<()> {
     let path = args
         .worktree
         .canonicalize()
