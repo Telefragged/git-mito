@@ -2,7 +2,9 @@
 //!
 //! ```text
 //! .mito/
-//!   base -> bases/<id>   symlink to the current base; swapped atomically
+//!   base -> bases/<id>   symlink to the current base; swapped atomically.
+//!                        <id> is the base's short commit, suffixed `.N` if
+//!                        that commit is rebuilt
 //!   bases/<id>/          one btrfs subvolume per base, each a git worktree
 //!   lock                 flock guarding `base` against deletion races
 //!   update.lock          flock serialising `git mito update`

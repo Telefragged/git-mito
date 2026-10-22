@@ -57,9 +57,9 @@ with an alias for `git fetch && git mito update`.
 
 ```text
 .mito/
-  base -> bases/<id>   the current base
-  bases/<id>/          one read-only subvolume per base, each a locked worktree
-  lock, update.lock    flocks
+  base -> bases/<commit>   the current base
+  bases/<commit>/          one read-only subvolume per base, each a locked worktree
+  lock, update.lock        flocks
 ```
 
 A published base never changes (its subvolume is read-only), so its files,

@@ -2,7 +2,6 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 
@@ -41,7 +40,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         return Ok(());
     }
 
-    let id = unused_id(mito, &format!("{}-{}", unix_time(), short(&target)));
+    let id = unused_id(mito, &short(&target));
     let path = mito.bases_dir().join(&id);
     // Locked, so that `git worktree remove` and `prune` leave it alone.
     let git_args: Vec<OsString> = ["--detach", "--lock", "--reason", "managed by git-mito"]
@@ -103,8 +102,8 @@ fn resolve_track(mito: &Mito) -> Result<gix::ObjectId> {
     }
 }
 
-/// `stem`, suffixed if a base already uses it, as when rebuilding with
-/// `--force` within the same second.
+/// `stem`, suffixed with `.1`, `.2`, … if a base already uses it, as when
+/// `--force` rebuilds the current commit.
 fn unused_id(mito: &Mito, stem: &str) -> String {
     let mut id = stem.to_owned();
     let mut n = 1;
@@ -113,10 +112,4 @@ fn unused_id(mito: &Mito, stem: &str) -> String {
         n += 1;
     }
     id
-}
-
-fn unix_time() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }
