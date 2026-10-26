@@ -10,7 +10,7 @@ use crate::git;
 use crate::git::short;
 use crate::mito::Mito;
 use crate::signal;
-use crate::worktree::{self, Retired, Source};
+use crate::worktree::{self, Source, UnusedBaseGuard};
 
 /// Move the base to the tracked revision, creating it if needed.
 ///
@@ -116,7 +116,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         discarded(&short_target, winner);
         return Ok(());
     }
-    let retired = pending.commit(|| mito.publish_base(&lock, &id))?;
+    let unused = pending.commit(|| mito.publish_base(&lock, &id))?;
     // The branch only mirrors the base, so failing to move it is no reason
     // to fail the update.
     if let Err(e) = mito.set_base_ref(&lock, target) {
@@ -124,7 +124,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     }
     drop(lock);
     println!("Base updated to {short_target} at {}", path.display());
-    retired.map_or(Ok(()), Retired::destroy)
+    unused.map_or(Ok(()), UnusedBaseGuard::destroy)
 }
 
 fn discarded(target: &str, winner: gix::ObjectId) {

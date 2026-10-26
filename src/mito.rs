@@ -31,7 +31,7 @@ use nix::fcntl::{Flock, FlockArg};
 
 use crate::config::Config;
 use crate::git;
-use crate::worktree::Retired;
+use crate::worktree::UnusedBaseGuard;
 
 pub struct Mito {
     /// The repository of the worktree mito was run in.
@@ -88,18 +88,25 @@ impl Mito {
     /// Makes `bases/<id>` the current base by swapping the base pointer
     /// atomically, its last step. Returns the base it replaced, which nothing
     /// reads any more, to be deleted.
-    pub fn publish_base(&self, lock: &ExclusiveBaseLock, id: &str) -> Result<Option<Retired>> {
+    pub fn publish_base(
+        &self,
+        lock: &ExclusiveBaseLock,
+        id: &str,
+    ) -> Result<Option<UnusedBaseGuard>> {
         let tmp = self.dir.join("base.tmp");
         let _ = fs::remove_file(&tmp);
         std::os::unix::fs::symlink(Path::new("bases").join(id), &tmp)?;
         fs::rename(&tmp, self.base_link()).context("swapping the base pointer")?;
-        Ok(lock.base.clone().map(|old| Retired::new(&self.root, old)))
+        Ok(lock
+            .base
+            .clone()
+            .map(|old| UnusedBaseGuard::new(&self.root, old)))
     }
 
     /// Makes there be no base: removes the base pointer and the `mito/base`
     /// branch. Returns the base it pointed at, which nothing reads any more,
     /// to be deleted.
-    pub fn unpublish_base(&self, lock: &ExclusiveBaseLock) -> Result<Option<Retired>> {
+    pub fn unpublish_base(&self, lock: &ExclusiveBaseLock) -> Result<Option<UnusedBaseGuard>> {
         match fs::remove_file(self.base_link()) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
                 return Err(e).context("removing the base pointer");
@@ -109,7 +116,10 @@ impl Mito {
         if let Some(branch) = self.repo.try_find_reference("refs/heads/mito/base")? {
             branch.delete().context("deleting the mito/base branch")?;
         }
-        Ok(lock.base.clone().map(|old| Retired::new(&self.root, old)))
+        Ok(lock
+            .base
+            .clone()
+            .map(|old| UnusedBaseGuard::new(&self.root, old)))
     }
 
     /// Moves the `mito/base` branch to `commit`, the current base's. Under

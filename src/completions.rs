@@ -46,9 +46,9 @@ pub fn complete(command: impl Fn() -> clap::Command) {
         hide_flags(command)
     })
     .shells(Shells(&[
-        &WithGit(&Bash, BASH_GLUE),
+        &GitCompleter(&Bash, BASH_GLUE),
         &Fish,
-        &WithGit(&Zsh, ZSH_GLUE),
+        &GitCompleter(&Zsh, ZSH_GLUE),
     ]))
     .complete();
 }
@@ -71,9 +71,9 @@ fn hide_flags(command: clap::Command) -> clap::Command {
 
 /// A shell's completer, with glue appended to its registration that hooks
 /// `git-mito`'s completion into the shell's git completion.
-struct WithGit(&'static dyn EnvCompleter, &'static str);
+struct GitCompleter(&'static dyn EnvCompleter, &'static str);
 
-impl EnvCompleter for WithGit {
+impl EnvCompleter for GitCompleter {
     fn name(&self) -> &'static str {
         self.0.name()
     }

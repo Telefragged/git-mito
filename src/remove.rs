@@ -6,7 +6,7 @@ use clap_complete::{ArgValueCompleter, CompletionCandidate};
 
 use crate::git;
 use crate::mito::Mito;
-use crate::worktree::{self, Retired};
+use crate::worktree::{self, UnusedBaseGuard};
 
 /// Remove a worktree, deleting its subvolume in one step where permitted.
 ///
@@ -68,13 +68,13 @@ pub fn run(mito: &Mito, args: &RemoveArgs) -> Result<()> {
 fn remove_base(mito: &Mito, path: &Path) -> Result<()> {
     let lock = mito.lock_base_exclusive()?;
     let current = lock.base.as_deref().and_then(|b| b.canonicalize().ok());
-    let retired = if current.as_deref() == Some(path) {
+    let unused = if current.as_deref() == Some(path) {
         mito.unpublish_base(&lock)?
     } else {
-        Some(Retired::new(&mito.root, path.to_owned()))
+        Some(UnusedBaseGuard::new(&mito.root, path.to_owned()))
     };
     drop(lock);
-    retired.map_or(Ok(()), Retired::destroy)?;
+    unused.map_or(Ok(()), UnusedBaseGuard::destroy)?;
     println!("Removed base {}", path.display());
     Ok(())
 }

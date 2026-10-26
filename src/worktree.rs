@@ -33,11 +33,12 @@ impl<'a> Source<'a> {
     }
 }
 
-/// A worktree registered with git that isn't finished yet. Until it is kept,
-/// by [`Pending::keep`] or [`Pending::commit`], dropping it rolls everything
-/// back: the worktree, its registration, and whatever `git worktree add` did
-/// to its branch.
-pub struct Pending {
+/// A guard over a worktree registered with git that isn't finished yet.
+/// Until it is kept, by [`WorktreeGuard::keep`] or
+/// [`WorktreeGuard::commit`], dropping it rolls everything back: the
+/// worktree, its registration, and whatever `git worktree add` did to its
+/// branch.
+pub struct WorktreeGuard {
     /// Where git runs.
     dir: PathBuf,
     path: PathBuf,
@@ -45,25 +46,27 @@ pub struct Pending {
     repo: gix::Repository,
     /// The commit `git worktree add` set HEAD to.
     head: gix::ObjectId,
-    /// What undoes `git worktree add`'s change to the branch HEAD is on.
-    branch: Option<BranchUndo>,
+    /// What `git worktree add` did to the branch HEAD is on.
+    branch: Option<BranchChange>,
     source_commit: Option<gix::ObjectId>,
     done: bool,
 }
 
-/// Undoes what `git worktree add` did to a branch, as long as the branch is
-/// still at `at`, where it left it, so as not to undo a move made meanwhile.
-enum BranchUndo {
-    /// Deletes a branch it created, with any tracking set up for it.
-    Delete {
+/// What `git worktree add` did to a branch, which it left at `at`. A rollback
+/// undoes it only while the branch is still there, so as not to undo a move
+/// made meanwhile.
+enum BranchChange {
+    /// It created the branch; undone by deleting it, with any tracking set up
+    /// for it.
+    Created {
         name: gix::refs::FullName,
         at: gix::ObjectId,
     },
-    /// Moves a branch it reset back to `to`.
-    Reset {
+    /// It moved an existing branch away from `from`; undone by moving it back.
+    Moved {
         name: gix::refs::FullName,
         at: gix::ObjectId,
-        to: gix::ObjectId,
+        from: gix::ObjectId,
     },
 }
 
@@ -79,7 +82,7 @@ pub fn clone(
     path: &Path,
     source: Option<&Source<'_>>,
     echo: bool,
-) -> Result<Pending> {
+) -> Result<WorktreeGuard> {
     let branches = git::local_branches(repo)?;
     let add = ["worktree", "add", "--no-checkout"].map(OsString::from);
     let output = git::output(dir, add.iter().chain(args))?;
@@ -89,10 +92,14 @@ pub fn clone(
     let repo = git::open(path)?;
     let head = git::head(&repo)?;
     let branch = repo.head_name()?.map(|name| match branches.get(&name) {
-        Some(&to) => BranchUndo::Reset { name, at: head, to },
-        None => BranchUndo::Delete { name, at: head },
+        Some(&from) => BranchChange::Moved {
+            name,
+            at: head,
+            from,
+        },
+        None => BranchChange::Created { name, at: head },
     });
-    let pending = Pending {
+    let pending = WorktreeGuard {
         dir: dir.to_owned(),
         path: path.to_owned(),
         repo,
@@ -105,7 +112,7 @@ pub fn clone(
     Ok(pending)
 }
 
-impl Pending {
+impl WorktreeGuard {
     fn populate(&self, source: Option<&Source<'_>>) -> Result<()> {
         // Replace the directory with a subvolume, then restore the new
         // worktree's `.git` file over the source's copy. It is carried across
@@ -172,25 +179,25 @@ impl Pending {
     }
 }
 
-impl Drop for Pending {
+impl Drop for WorktreeGuard {
     fn drop(&mut self) {
         if self.done {
             return;
         }
         let _ = destroy(&self.dir, &self.path);
         match &self.branch {
-            Some(BranchUndo::Delete { name, at }) => {
+            Some(BranchChange::Created { name, at }) => {
                 let full = name.as_bstr().to_string();
                 if git::run(&self.dir, ["update-ref", "-d", &full, &at.to_string()]).is_ok() {
                     let section = format!("branch.{}", name.shorten());
                     let _ = git::run(&self.dir, ["config", "--remove-section", &section]);
                 }
             }
-            Some(BranchUndo::Reset { name, at, to }) => {
+            Some(BranchChange::Moved { name, at, from }) => {
                 let full = name.as_bstr().to_string();
                 let _ = git::run(
                     &self.dir,
-                    ["update-ref", &full, &to.to_string(), &at.to_string()],
+                    ["update-ref", &full, &from.to_string(), &at.to_string()],
                 );
             }
             None => {}
@@ -198,16 +205,17 @@ impl Drop for Pending {
     }
 }
 
-/// A worktree to delete, as a base once replaced. It is deleted when
-/// dropped, so that nothing failing or panicking first leaves it behind;
-/// [`Retired::destroy`] deletes it and reports errors.
-pub struct Retired {
+/// A guard over a base no longer in use, as one replaced or removed.
+/// Dropping it deletes the base, so that nothing failing or panicking first
+/// leaves it behind; [`UnusedBaseGuard::destroy`] deletes it and reports
+/// errors.
+pub struct UnusedBaseGuard {
     /// Where git runs.
     dir: PathBuf,
     path: Option<PathBuf>,
 }
 
-impl Retired {
+impl UnusedBaseGuard {
     pub fn new(dir: &Path, path: PathBuf) -> Self {
         Self {
             dir: dir.to_owned(),
@@ -223,7 +231,7 @@ impl Retired {
     }
 }
 
-impl Drop for Retired {
+impl Drop for UnusedBaseGuard {
     fn drop(&mut self) {
         if let Some(path) = self.path.take() {
             let _ = destroy(&self.dir, &path);

@@ -4,7 +4,7 @@
 //! SIGHUP are caught and only noted: the child git or on-update command gets
 //! them too, if sent to the process group as a terminal does, and fails; a
 //! blocking `flock` fails with EINTR; and [`check`], in
-//! [`Pending::commit`](crate::worktree::Pending::commit), refuses to keep the
+//! [`WorktreeGuard::commit`](crate::worktree::WorktreeGuard::commit), refuses to keep the
 //! worktree, so the error path rolls back as for any other failure.
 
 use std::sync::atomic::{AtomicBool, Ordering};
