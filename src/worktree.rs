@@ -2,6 +2,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -69,17 +70,22 @@ enum BranchUndo {
 /// Creates the worktree at `path` by running `git worktree add --no-checkout
 /// <args>` in `dir` (`repo` is its repository), then replaces its directory
 /// with a subvolume: a snapshot of `source` with the source's index, or an
-/// empty one. Once this returns, the source is no longer read.
+/// empty one. Once this returns, the source is no longer read. With `echo`,
+/// git's own messages are passed on, as `git worktree add` would print them.
 pub fn clone(
     repo: &gix::Repository,
     dir: &Path,
     args: &[OsString],
     path: &Path,
     source: Option<&Source<'_>>,
+    echo: bool,
 ) -> Result<Pending> {
     let branches = git::local_branches(repo)?;
     let add = ["worktree", "add", "--no-checkout"].map(OsString::from);
-    git::run(dir, add.iter().chain(args))?;
+    let output = git::output(dir, add.iter().chain(args))?;
+    if echo {
+        std::io::stderr().write_all(&output.stderr)?;
+    }
     let repo = git::open(path)?;
     let head = git::head(&repo)?;
     let branch = repo.head_name()?.map(|name| match branches.get(&name) {
@@ -143,19 +149,8 @@ impl Pending {
     /// what differs from the source. Returns HEAD.
     pub fn checkout(&mut self) -> Result<gix::ObjectId> {
         let head = self.head;
-        match self.source_commit {
-            Some(base) if base == head => {}
-            Some(base) => {
-                eprintln!(
-                    "note: {} differs from the base ({}); checking out the difference",
-                    git::short(&head),
-                    git::short(&base)
-                );
-                git::run(&self.path, ["reset", "--hard", "--quiet"])?;
-            }
-            None => {
-                git::run(&self.path, ["reset", "--hard", "--quiet"])?;
-            }
+        if self.source_commit != Some(head) {
+            git::run(&self.path, ["reset", "--hard", "--quiet"])?;
         }
         Ok(head)
     }

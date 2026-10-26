@@ -6,13 +6,26 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
 
 use anyhow::{Context, Result, bail};
 
 /// Runs `git -C <dir> <args>` and returns its stdout, trailing newline
 /// trimmed. On failure the error carries git's stderr.
 pub fn run<I, S>(dir: &Path, args: I) -> Result<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let output = output(dir, args)?;
+    let mut stdout = String::from_utf8(output.stdout).context("git printed non-UTF-8 output")?;
+    stdout.truncate(stdout.trim_end_matches('\n').len());
+    Ok(stdout)
+}
+
+/// Runs `git -C <dir> <args>` and returns everything it printed. On failure
+/// the error carries git's stderr.
+pub fn output<I, S>(dir: &Path, args: I) -> Result<Output>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -33,9 +46,7 @@ where
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
-    let mut stdout = String::from_utf8(output.stdout).context("git printed non-UTF-8 output")?;
-    stdout.truncate(stdout.trim_end_matches('\n').len());
-    Ok(stdout)
+    Ok(output)
 }
 
 /// Opens the repository or worktree at `path`.

@@ -50,11 +50,18 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         .collect();
     // Rolls the new base back if anything fails or it is discarded, until it
     // is kept once published.
-    let mut pending = worktree::clone(&mito.repo, &mito.root, &git_args, &path, source.as_ref())
-        // Once registered, the rollback deletes the directory itself.
-        .inspect_err(|_| {
-            let _ = fs::remove_dir(&path);
-        })?;
+    let mut pending = worktree::clone(
+        &mito.repo,
+        &mito.root,
+        &git_args,
+        &path,
+        source.as_ref(),
+        false,
+    )
+    // Once registered, the rollback deletes the directory itself.
+    .inspect_err(|_| {
+        let _ = fs::remove_dir(&path);
+    })?;
     drop(guard);
     pending.checkout()?;
 

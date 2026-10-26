@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 
-use crate::git;
 use crate::mito::Mito;
 use crate::worktree::{self, Source};
 
@@ -87,15 +86,13 @@ pub fn run(mito: &Mito, args: AddArgs) -> Result<()> {
     git_args.push(path.clone().into());
     git_args.extend(args.commitish.map(OsString::from));
 
-    let mut pending = worktree::clone(&mito.repo, &cwd, &git_args, &path, Some(&source))?;
+    let mut pending = worktree::clone(&mito.repo, &cwd, &git_args, &path, Some(&source), true)?;
     drop(guard);
     let head = pending.checkout()?;
     pending.keep()?;
-    let path = path.canonicalize()?;
-    println!(
-        "Created worktree {} at {}",
-        path.display(),
-        git::short(&head)
-    );
+    // As `git worktree add` reports its checkout.
+    let commit = mito.repo.find_commit(head)?;
+    let summary = commit.message()?.summary();
+    println!("HEAD is now at {} {summary}", commit.id().shorten_or_id());
     Ok(())
 }
