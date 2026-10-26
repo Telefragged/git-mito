@@ -261,6 +261,20 @@ assert_clean "$(readlink -f .mito/base)"
 assert_eq "$(ls .mito/bases | wc -l)" 1 "replaced bases are deleted"
 assert_eq "$(git worktree list | grep -c '\.mito/bases/')" 1 "one base registered"
 
+step "update skips the id of a base that is half deleted"
+# Deleting a base deletes its directory before its entry in .git/worktrees.
+# Recreates that moment for the id the next update would pick.
+base=$(readlink -f .mito/base)
+stem=$(git -C "$base" rev-parse --short=10 HEAD)
+next=$stem n=0
+while [[ -e .mito/bases/$next ]]; do
+  n=$((n + 1)) next=$stem.$n
+done
+git worktree add -q --detach --lock ".mito/bases/$next" HEAD
+rm -rf ".mito/bases/$next"
+git mito update --force || fail "update picked the half-deleted base's id"
+git worktree remove -ff ".mito/bases/$next"
+
 step "a split index carries over"
 # A new commit, so that `reset --hard` writes the base's index split, as
 # the shared index it leaves beside it shows.

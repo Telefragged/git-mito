@@ -182,6 +182,12 @@ fn resolve_track(mito: &Mito) -> Result<gix::ObjectId> {
 /// update can do: `stem`, suffixed with `.1`, `.2`, … if a base already uses
 /// it, as when `--force` rebuilds the current commit or another update
 /// builds the same one concurrently.
+///
+/// An id that still has an entry in `.git/worktrees` is skipped too:
+/// deleting a base deletes its directory first and its entry after, and git
+/// refuses to add a worktree where a locked one it has an entry for is
+/// missing. git names the entry after the directory. Once neither is left,
+/// nothing touches the id any more.
 fn claim_id(mito: &Mito, stem: &str) -> Result<String> {
     for n in 0.. {
         let id = if n == 0 {
@@ -189,6 +195,9 @@ fn claim_id(mito: &Mito, stem: &str) -> Result<String> {
         } else {
             format!("{stem}.{n}")
         };
+        if mito.repo.worktree_proxy_by_id(id.as_str())?.is_some() {
+            continue;
+        }
         let path = mito.bases_dir().join(&id);
         match fs::create_dir(&path) {
             Ok(()) => return Ok(id),
