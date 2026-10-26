@@ -163,7 +163,7 @@ git mito remove ../wt6
 [[ -e ../wt6 ]] && fail "wt6 still exists"
 git mito remove ../wt1 && fail "removed a dirty worktree"
 git mito remove --force ../wt1
-git mito remove "$base" && fail "removed the base"
+git mito remove "$base" && fail "removed the base without --force"
 git worktree remove ../wt3
 [[ -e ../wt3 ]] && fail "git worktree remove left wt3 behind"
 
@@ -309,6 +309,17 @@ mv ../mito.toml.saved .mito.toml
 # resets them.
 git commit -q --allow-empty -m racy
 git mito update
+
+step "remove --force removes the base"
+base=$(readlink -f .mito/base)
+git mito remove --force .mito/base
+[[ -e $base ]] && fail "the base still exists"
+[[ -L .mito/base ]] && fail "the base pointer still exists"
+git rev-parse -q --verify mito/base >/dev/null && fail "the mito/base branch still exists"
+git mito add ../wt-nobase && fail "add without a base succeeded"
+git mito update
+git mito add ../wt-rebased
+assert_clean ../wt-rebased
 
 step "worktree bookkeeping is consistent"
 git worktree prune --dry-run -v 2>&1 | grep -q . && fail "stale worktree registrations"

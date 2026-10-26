@@ -6,7 +6,7 @@ use clap_complete::{ArgValueCompleter, CompletionCandidate};
 
 use crate::git;
 use crate::mito::Mito;
-use crate::worktree;
+use crate::worktree::{self, Retired};
 
 /// Remove a worktree, deleting its subvolume in one step where permitted.
 ///
@@ -14,7 +14,7 @@ use crate::worktree;
 /// by file.
 #[derive(clap::Args)]
 pub struct RemoveArgs {
-    /// Remove even if the worktree is dirty or locked.
+    /// Remove even if the worktree is dirty or locked, or is a base.
     #[arg(short, long)]
     force: bool,
     #[arg(add = ArgValueCompleter::new(complete_worktree))]
@@ -27,7 +27,13 @@ pub fn run(mito: &Mito, args: &RemoveArgs) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("{} is not a worktree", args.worktree.display()))?;
     if is_base(mito, &path) {
-        bail!("{} is a base managed by `git mito update`", path.display());
+        if !args.force {
+            bail!(
+                "{} is a base managed by `git mito update`; use --force to remove it anyway",
+                path.display()
+            );
+        }
+        return remove_base(mito, &path);
     }
     let (_, worktree) = linked_worktrees(mito)?
         .find(|(p, _)| *p == path)
@@ -54,6 +60,22 @@ pub fn run(mito: &Mito, args: &RemoveArgs) -> Result<()> {
 
     worktree::destroy(&mito.root, &path)?;
     println!("Removed worktree {}", path.display());
+    Ok(())
+}
+
+/// Removes the base at `path`. The current base stops being current first,
+/// under the exclusive lock, so that no `add` is copying it as it goes.
+fn remove_base(mito: &Mito, path: &Path) -> Result<()> {
+    let lock = mito.lock_base_exclusive()?;
+    let current = lock.base.as_deref().and_then(|b| b.canonicalize().ok());
+    let retired = if current.as_deref() == Some(path) {
+        mito.unpublish_base(&lock)?
+    } else {
+        Some(Retired::new(&mito.root, path.to_owned()))
+    };
+    drop(lock);
+    retired.map_or(Ok(()), Retired::destroy)?;
+    println!("Removed base {}", path.display());
     Ok(())
 }
 

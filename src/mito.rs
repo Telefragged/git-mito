@@ -96,6 +96,22 @@ impl Mito {
         Ok(lock.base.clone().map(|old| Retired::new(&self.root, old)))
     }
 
+    /// Makes there be no base: removes the base pointer and the `mito/base`
+    /// branch. Returns the base it pointed at, which nothing reads any more,
+    /// to be deleted.
+    pub fn unpublish_base(&self, lock: &ExclusiveBaseLock) -> Result<Option<Retired>> {
+        match fs::remove_file(self.base_link()) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                return Err(e).context("removing the base pointer");
+            }
+            _ => {}
+        }
+        if let Some(branch) = self.repo.try_find_reference("refs/heads/mito/base")? {
+            branch.delete().context("deleting the mito/base branch")?;
+        }
+        Ok(lock.base.clone().map(|old| Retired::new(&self.root, old)))
+    }
+
     /// Moves the `mito/base` branch to `commit`, the current base's. Under
     /// the lock, so that it ends at the base published last.
     pub fn set_base_ref(&self, _lock: &ExclusiveBaseLock, commit: gix::ObjectId) -> Result<()> {

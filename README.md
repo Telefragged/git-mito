@@ -103,7 +103,7 @@ Arguments:
 
 Options:
   -f, --force
-          Remove even if the worktree is dirty or locked
+          Remove even if the worktree is dirty or locked, or is a base
 
   -h, --help
           Print help (see a summary with '-h')
