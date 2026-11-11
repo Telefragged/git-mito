@@ -158,6 +158,20 @@ assert_eq "$(git -C ../wt6 rev-parse HEAD)" "$(git rev-parse main)" "wt6 commit"
 assert_clean ../wt6
 git -C ../wt6 diff-files --quiet || fail "wt6 index is stale"
 
+step "update --no-snapshot rebuilds the base from scratch"
+old_base=$base
+git mito update --no-snapshot
+base=$(readlink -f .mito/base)
+[[ $base != "$old_base" ]] || fail "base was not rebuilt at the same commit"
+[[ -e $old_base ]] && fail "old base still exists"
+assert_eq "$(git -C "$base" rev-parse HEAD)" "$(git rev-parse main)" "rebuilt base commit"
+assert_eq "$(wc -l <"$base/target/runs")" 1 "on-update started over"
+assert_clean "$base"
+assert_eq "$(wc -l <../wt6/target/runs)" 2 "wt6 untouched by the rebuild"
+git mito add ../wt8
+git -C ../wt8 diff-files --quiet || fail "wt8 index is stale"
+git mito remove ../wt8
+
 step "remove"
 git mito remove ../wt6
 [[ -e ../wt6 ]] && fail "wt6 still exists"

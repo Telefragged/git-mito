@@ -21,6 +21,10 @@ pub struct UpdateArgs {
     /// Rebuild the base even if it is already at the tracked revision.
     #[arg(short, long)]
     force: bool,
+    /// Check out the new base from scratch instead of snapshotting the
+    /// current one. Implies --force.
+    #[arg(long)]
+    no_snapshot: bool,
 }
 
 pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
@@ -35,7 +39,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     let current = guard.base.clone();
     let source = guard.base.as_deref().map(Source::open).transpose()?;
     let current_commit = source.as_ref().map(|s| s.commit);
-    if current_commit == Some(target) && !args.force {
+    if current_commit == Some(target) && !args.force && !args.no_snapshot {
         println!("Base is already at {short_target}");
         return Ok(());
     }
@@ -55,7 +59,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         &mito.root,
         &git_args,
         &path,
-        source.as_ref(),
+        source.as_ref().filter(|_| !args.no_snapshot),
         false,
     )
     // Once registered, the rollback deletes the directory itself.
@@ -153,9 +157,9 @@ fn loses_to(
     Ok((tracked != target && !ahead).then_some(published))
 }
 
-/// Runs the on-update `command` in the new base at `path`. The base is a
-/// snapshot of the previous one, so whatever the last run left behind is
-/// there to build on.
+/// Runs the on-update `command` in the new base at `path`. Unless built with
+/// `--no-snapshot`, the base is a snapshot of the previous one, so whatever
+/// the last run left behind is there to build on.
 fn on_update(command: &str, path: &Path) -> Result<()> {
     eprintln!("Running on-update in the new base: {command}");
     let mut cmd = Command::new("sh");

@@ -29,7 +29,7 @@ cases=(
   'git-mito |add update remove help'
   'git mito |add update remove help'
   'git mito remove --|--force --help'
-  'git mito update |--force --help'
+  'git mito update |--force --no-snapshot --help'
   'git mito re|remove'
   'git mito add --d|--detach'
   'git -C . mito up|update'

@@ -39,6 +39,9 @@ Options:
   -f, --force
           Rebuild the base even if it is already at the tracked revision
 
+      --no-snapshot
+          Check out the new base from scratch instead of snapshotting the current one. Implies --force
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -130,7 +133,9 @@ script in the repository (`./scripts/build.sh`), with the new base as its
 working directory. Its build outputs then come along in every worktree added
 from that base. Each base starts as a snapshot of the previous one, with all
 its files and build outputs, so a build there is incremental on what the last
-one left behind.
+one left behind. That also lets build outputs and other ignored files
+accumulate from base to base. To reset the accumulation, use
+`update --no-snapshot` to start from a clean checkout again.
 
 If it fails, `update` stops and the previous base stays in place.
 
