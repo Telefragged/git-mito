@@ -37,7 +37,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
     // Held while the current base is read and copied, as in `add`.
     let guard = mito.lock_base()?;
     let current = guard.base.clone();
-    let source = guard.base.as_deref().map(Source::open).transpose()?;
+    let source = guard.base.as_deref().map(Source::open_base).transpose()?;
     let current_commit = source.as_ref().map(|s| s.commit);
     if current_commit == Some(target) && !args.force && !args.no_snapshot {
         println!("Base is already at {short_target}");

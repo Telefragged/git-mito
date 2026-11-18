@@ -8,8 +8,9 @@ one takes about as long as taking the snapshot, however many files the
 repository has. Ignored files in the base, such as build outputs, come along.
 
 ```sh
-git mito update          # create the base, or move it to the tracked revision
-git mito add ../feature  # like `git worktree add`, but a snapshot of the base
+git mito update                           # create the base, or move it to the tracked revision
+git mito add ../feature                   # like `git worktree add`, but a snapshot of the base
+git mito add --from ../feature ../review  # a snapshot of another worktree
 git mito remove ../feature
 ```
 
@@ -53,6 +54,8 @@ Create a worktree by snapshotting the base.
 
 Takes `git worktree add`'s options and resolves them the same way. A <commit-ish> other than the base's checks out the difference from it.
 
+With --from, snapshots another worktree that git mito added instead, with its uncommitted changes and its untracked and ignored files. It must not be in the middle of a merge, rebase, cherry-pick, revert or bisect.
+
 Usage: git-mito add [OPTIONS] <PATH> [commit-ish]
 
 Arguments:
@@ -86,6 +89,9 @@ Options:
 
       --no-track
 
+
+      --from <worktree>
+          Snapshot <worktree>, a worktree git mito added, instead of the base. The new worktree starts at its HEAD, on a new branch named after <path> unless -b, -B or --detach is given
 
   -h, --help
           Print help (see a summary with '-h')

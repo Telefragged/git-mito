@@ -34,6 +34,7 @@ cases=(
   'git mito add --d|--detach'
   'git -C . mito up|update'
   'git mito remove |../b .mito/worktrees/a'
+  'git mito add --from |../b .mito/worktrees/a'
   'git mito remove .m|.mito/worktrees/a'
   "git-mito remove /|$HOME/b $HOME/repo/.mito/worktrees/a"
 )

@@ -27,6 +27,7 @@ assert_clean() {
 }
 assert_eq() { [[ $1 == "$2" ]] || fail "expected '$2', got '$1' ($3)"; }
 is_subvolume() { [[ $(stat -c %i "$1") == 256 ]]; }
+wait_for_start_of_second() { while ((10#$(date +%N) > 300000000)); do :; done; }
 
 step "set up a repository"
 git init -q -b main repo
@@ -171,6 +172,59 @@ assert_eq "$(wc -l <../wt6/target/runs)" 2 "wt6 untouched by the rebuild"
 git mito add ../wt8
 git -C ../wt8 diff-files --quiet || fail "wt8 index is stale"
 git mito remove ../wt8
+
+step "add --from copies a worktree with its changes"
+git mito add ../src-wt
+echo staged >>../src-wt/keep
+git -C ../src-wt add keep
+echo unstaged >>../src-wt/keep
+echo untracked >../src-wt/untracked
+echo built >../src-wt/target/built
+git mito add --from ../src-wt ../wt-copy
+is_subvolume ../wt-copy || fail "wt-copy is not a subvolume"
+assert_eq "$(git -C ../wt-copy branch --show-current)" wt-copy "wt-copy branch"
+assert_eq "$(git -C ../wt-copy rev-parse HEAD)" "$(git -C ../src-wt rev-parse HEAD)" "wt-copy commit"
+assert_eq "$(git -C ../wt-copy status --porcelain)" "$(git -C ../src-wt status --porcelain)" "wt-copy status"
+assert_eq "$(git -C ../wt-copy diff --cached)" "$(git -C ../src-wt diff --cached)" "wt-copy staged changes"
+assert_eq "$(cat ../wt-copy/target/built)" built "ignored file copied"
+git mito add --from ../src-wt --detach ../wt-copy-detached
+git -C ../wt-copy-detached symbolic-ref -q HEAD && fail "wt-copy-detached HEAD is not detached"
+git mito add --from ../src-wt -b copy-branch ../wt-copy-b
+assert_eq "$(git -C ../wt-copy-b branch --show-current)" copy-branch "wt-copy-b branch"
+git mito add --from ../src-wt ../wt-copy-x main && fail "add --from with a <commit-ish> succeeded"
+git branch -q wt-copy-taken
+git mito add --from ../src-wt ../wt-copy-taken && fail "add --from onto an existing branch succeeded"
+git branch -q -D wt-copy-taken
+git mito add --from . ../wt-copy-main && fail "add --from the main worktree succeeded"
+git worktree add -q --detach ../plain-wt
+git mito add --from ../plain-wt ../wt-copy-plain && fail "add --from a worktree that git mito didn't add succeeded"
+git worktree remove ../plain-wt
+for wt in wt-copy wt-copy-detached wt-copy-b; do git mito remove --force ../$wt; done
+
+step "add --from keeps a same-sized change within the second of the index write"
+wait_for_start_of_second
+echo aaaa >../src-wt/racy
+git -C ../src-wt add racy
+echo bbbb >../src-wt/racy
+src_index=$(git -C ../src-wt rev-parse --git-path index)
+assert_eq "$(stat -c %Y ../src-wt/racy)" "$(stat -c %Y "$src_index")" "the change is within the second of the index write"
+sleep 1
+git mito add --from ../src-wt --detach ../wt-copy-racy
+assert_eq "$(git -C ../wt-copy-racy status --porcelain racy)" "AM racy" "wt-copy-racy sees the change"
+git mito remove --force ../wt-copy-racy
+
+step "add --from refuses a worktree in the middle of an operation"
+git branch -q to-merge "$(git commit-tree -p main -m to-merge 'main^{tree}')"
+git mito add --detach ../wt-merging
+git -C ../wt-merging merge -q --no-ff --no-commit to-merge
+git mito add --from ../wt-merging ../wt-copy-merge 2>../add-merge.log && fail "add --from during a merge succeeded"
+grep -q "in the middle of a merge" ../add-merge.log || fail "no error about the merge: $(cat ../add-merge.log)"
+git rev-parse -q --verify wt-copy-merge >/dev/null && fail "refused add --from left its branch behind"
+[[ -e ../wt-copy-merge ]] && fail "refused add --from left its directory behind"
+git -C ../wt-merging merge --abort
+git mito remove ../wt-merging
+git mito remove --force ../src-wt
+git branch -q -D to-merge
 
 step "remove"
 git mito remove ../wt6

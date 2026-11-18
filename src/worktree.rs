@@ -1,38 +1,132 @@
 //! Creating worktrees as btrfs subvolumes.
 
 use std::ffi::{OsStr, OsString};
-use std::fs;
+use std::fs::{self, File};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::btrfs;
 use crate::git;
 use crate::signal;
 
-/// The base a worktree is cloned from.
 pub struct Source<'a> {
     pub path: &'a Path,
     pub commit: gix::ObjectId,
-    /// The base's index, which matches its files.
-    pub index: PathBuf,
-    /// The base's gitdir, where git writes the shared index of a split index.
-    pub git_dir: PathBuf,
+    pub kind: SourceKind,
+    repo: gix::Repository,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SourceKind {
+    Base,
+    Worktree,
 }
 
 impl<'a> Source<'a> {
-    pub fn open(path: &'a Path) -> Result<Self> {
-        let repo = git::open(path)?;
-        let commit = git::head(&repo)
-            .with_context(|| format!("reading base worktree {}", path.display()))?;
+    pub fn open_base(path: &'a Path) -> Result<Self> {
+        Self::new(path, git::open(path)?, SourceKind::Base)
+    }
+
+    pub fn open_worktree(path: &'a Path, repo: gix::Repository) -> Result<Self> {
+        if !btrfs::is_subvolume(path)? {
+            bail!(
+                "{} is not a btrfs subvolume; only worktrees that git mito added can be copied",
+                path.display()
+            );
+        }
+        Self::new(path, repo, SourceKind::Worktree)
+    }
+
+    fn new(path: &'a Path, repo: gix::Repository, kind: SourceKind) -> Result<Self> {
+        let commit =
+            git::head(&repo).with_context(|| format!("reading worktree {}", path.display()))?;
         Ok(Self {
             path,
             commit,
-            index: repo.index_path(),
-            git_dir: repo.git_dir().to_owned(),
+            kind,
+            repo,
         })
     }
+
+    fn changes_while_copied(&self) -> bool {
+        self.kind == SourceKind::Worktree
+    }
+
+    /// Copies the index into `repo`, then snapshots the files to `path`. An
+    /// index older than the files is what git handles in any worktree being
+    /// edited; the reverse order can leave a file modified twice within a
+    /// second looking unchanged.
+    fn copy_into(&self, repo: &gix::Repository, path: &Path) -> Result<()> {
+        self.copy_index(repo)?;
+        btrfs::snapshot(self.path, path)?;
+        self.ensure_copy_valid()
+    }
+
+    /// git takes no lock for the length of an operation or a commit, so a
+    /// check after the copy also detects one that started during it. An
+    /// operation's files are stored in the worktree's gitdir, which the copy
+    /// does not get, and rebase and bisect record the worktree's branch,
+    /// which the copy is not on.
+    fn ensure_copy_valid(&self) -> Result<()> {
+        use gix::state::InProgress;
+        if !self.changes_while_copied() {
+            return Ok(());
+        }
+        if git::head(&self.repo)? != self.commit {
+            bail!(
+                "HEAD of {} moved while it was copied; try again",
+                self.path.display()
+            );
+        }
+        let operation = match self.repo.state() {
+            None => return Ok(()),
+            Some(InProgress::ApplyMailbox) => "`git am`",
+            Some(InProgress::ApplyMailboxRebase) => "`git am` or a rebase",
+            Some(InProgress::Bisect) => "a bisect",
+            Some(InProgress::CherryPick | InProgress::CherryPickSequence) => "a cherry-pick",
+            Some(InProgress::Merge) => "a merge",
+            Some(InProgress::Rebase | InProgress::RebaseInteractive) => "a rebase",
+            Some(InProgress::Revert | InProgress::RevertSequence) => "a revert",
+        };
+        bail!(
+            "{} is in the middle of {operation}; finish or abort it first",
+            self.path.display()
+        );
+    }
+
+    /// git rehashes only the entries of files modified in the same second as
+    /// the index was written or later, so a copy of the index with a later
+    /// mtime misses files modified after that write within the same second.
+    fn copy_index(&self, repo: &gix::Repository) -> Result<()> {
+        let context = || format!("copying the index of {}", self.path.display());
+        let keep_mtime = self.changes_while_copied();
+        let index = repo.index_path();
+        let git_dir = self.repo.git_dir();
+        copy(&self.repo.index_path(), &index, keep_mtime).with_context(context)?;
+        if let Some(name) = shared_index(&index, git_dir, repo.object_hash())? {
+            copy(
+                &git_dir.join(&name),
+                &repo.git_dir().join(&name),
+                keep_mtime,
+            )
+            .with_context(context)?;
+        }
+        Ok(())
+    }
+}
+
+/// With `keep_mtime`, the mtime comes from the opened `from`, so it matches
+/// the content copied even if git renames a new file over `from` meanwhile.
+fn copy(from: &Path, to: &Path, keep_mtime: bool) -> Result<()> {
+    let mut source = File::open(from).with_context(|| format!("opening {}", from.display()))?;
+    let mut dest = File::create(to).with_context(|| format!("creating {}", to.display()))?;
+    std::io::copy(&mut source, &mut dest)?;
+    if keep_mtime {
+        dest.set_modified(source.metadata()?.modified()?)?;
+    }
+    Ok(())
 }
 
 /// A guard over a worktree registered with git that isn't finished yet.
@@ -124,20 +218,10 @@ impl WorktreeGuard {
         fs::remove_file(&gitfile)?;
         fs::remove_dir(&self.path)?;
         match source {
-            Some(source) => btrfs::snapshot(source.path, &self.path)?,
+            Some(source) => source.copy_into(&self.repo, &self.path)?,
             None => btrfs::create_subvolume(&self.path)?,
         }
         fs::write(&gitfile, link)?;
-        if let Some(source) = source {
-            let context = || format!("copying the index of {}", source.path.display());
-            let index = self.repo.index_path();
-            // On btrfs this is a reflink: the copy shares the source's extents.
-            fs::copy(&source.index, &index).with_context(context)?;
-            if let Some(name) = shared_index(&index, &source.git_dir, self.repo.object_hash())? {
-                fs::copy(source.git_dir.join(&name), self.repo.git_dir().join(&name))
-                    .with_context(context)?;
-            }
-        }
         Ok(())
     }
 

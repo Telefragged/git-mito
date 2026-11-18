@@ -97,7 +97,7 @@ fn is_base(mito: &Mito, path: &Path) -> bool {
 /// Completes the worktrees `remove` takes: every linked one except the bases.
 /// Paths are relative to the current directory unless an absolute one is
 /// being typed, and each comes with its branch as help.
-fn complete_worktree(current: &OsStr) -> Vec<CompletionCandidate> {
+pub fn complete_worktree(current: &OsStr) -> Vec<CompletionCandidate> {
     worktree_candidates(current).unwrap_or_default()
 }
 
