@@ -539,6 +539,7 @@ dependencies = [
  "btrfs-uapi",
  "clap",
  "clap_complete",
+ "filetime",
  "gix",
  "nix",
  "serde",

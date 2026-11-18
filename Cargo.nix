@@ -1640,6 +1640,10 @@ rec {
             features = [ "unstable-dynamic" ];
           }
           {
+            name = "filetime";
+            packageId = "filetime";
+          }
+          {
             name = "gix";
             packageId = "gix";
             usesDefaultFeatures = false;

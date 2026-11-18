@@ -88,12 +88,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         signal::check()?;
         on_update(command, &path)?;
     }
-    // Worktrees copy only the index file, so it must not be a split index,
-    // which refers to a shared index file beside it. A worktree's index is
-    // split again the next time git writes it, if core.splitIndex is set.
-    let mut update_index = vec!["update-index", "--no-split-index"];
-    let refresh = mito.config.base.on_update.is_some();
-    if refresh {
+    if mito.config.base.on_update.is_some() {
         // git trusts an entry whose stat data matches only if the file is
         // older than the index, and a worktree's copy of the index is newer
         // than its files. So a file on-update rewrote in place, at the same
@@ -103,10 +98,7 @@ pub fn run(mito: &Mito, args: &UpdateArgs) -> Result<()> {
         // the files on-update touched. Without on-update nothing changes the
         // files after the index is written, and the refresh, which stats
         // every file, costs ~60 ms on Linux's repository.
-        update_index.extend(["-q", "--refresh"]);
-    }
-    if refresh || pending.has_split_index()? {
-        git::run(&path, update_index)?;
+        git::run(&path, ["update-index", "-q", "--refresh"])?;
     }
     // A published base must never change: its files, index and HEAD have to
     // keep agreeing for every worktree cloned from it.

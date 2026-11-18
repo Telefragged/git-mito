@@ -290,15 +290,16 @@ git mito update --force || fail "update picked the half-deleted base's id"
 git worktree remove -ff ".mito/bases/$next"
 
 step "a split index carries over"
-# A new commit, so that `reset --hard` writes the base's index split, as
-# the shared index it leaves beside it shows.
 git config core.splitIndex true
 git commit -q --allow-empty -m split
 git mito update
 ls .git/worktrees/"$(basename "$(readlink .mito/base)")"/sharedindex.* >/dev/null ||
   fail "the base's index was never split"
 git mito add --detach ../wt-split
+ls .git/worktrees/wt-split/sharedindex.* >/dev/null ||
+  fail "wt-split has no shared index"
 assert_clean ../wt-split
+git -C ../wt-split diff-files --quiet || fail "wt-split index is stale"
 git mito remove ../wt-split
 git config --unset core.splitIndex
 git commit -q --allow-empty -m unsplit

@@ -8,6 +8,7 @@ anyhow = "1.0.104"
 btrfs-uapi = "0.13"
 clap = { version = "4", features = ["derive"] }
 clap_complete = { version = "4.6.11", features = ["unstable-dynamic"] }
+filetime = "0.2.29"
 gix = { version = "0.90", default-features = false, features = ["sha1", "revision"] }
 nix = { version = "0.31", features = ["fs", "ioctl", "signal"] }
 serde = { version = "1.0.229", features = ["derive"] }

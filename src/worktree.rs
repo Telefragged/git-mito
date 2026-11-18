@@ -17,6 +17,8 @@ pub struct Source<'a> {
     pub commit: gix::ObjectId,
     /// The base's index, which matches its files.
     pub index: PathBuf,
+    /// The base's gitdir, where git writes the shared index of a split index.
+    pub git_dir: PathBuf,
 }
 
 impl<'a> Source<'a> {
@@ -24,11 +26,11 @@ impl<'a> Source<'a> {
         let repo = git::open(path)?;
         let commit = git::head(&repo)
             .with_context(|| format!("reading base worktree {}", path.display()))?;
-        let index = repo.index_path();
         Ok(Self {
             path,
             commit,
-            index,
+            index: repo.index_path(),
+            git_dir: repo.git_dir().to_owned(),
         })
     }
 }
@@ -127,29 +129,16 @@ impl WorktreeGuard {
         }
         fs::write(&gitfile, link)?;
         if let Some(source) = source {
+            let context = || format!("copying the index of {}", source.path.display());
+            let index = self.repo.index_path();
             // On btrfs this is a reflink: the copy shares the source's extents.
-            fs::copy(&source.index, self.repo.index_path())
-                .with_context(|| format!("copying the index of {}", source.path.display()))?;
-        }
-        Ok(())
-    }
-
-    /// Whether git has written the worktree's index split. Its gitdir is new,
-    /// so a shared index in it can only be one git wrote for this index.
-    pub fn has_split_index(&self) -> Result<bool> {
-        let gitdir = self.repo.git_dir();
-        for entry in
-            fs::read_dir(gitdir).with_context(|| format!("reading {}", gitdir.display()))?
-        {
-            if entry?
-                .file_name()
-                .as_encoded_bytes()
-                .starts_with(b"sharedindex.")
-            {
-                return Ok(true);
+            fs::copy(&source.index, &index).with_context(context)?;
+            if let Some(name) = shared_index(&index, &source.git_dir, self.repo.object_hash())? {
+                fs::copy(source.git_dir.join(&name), self.repo.git_dir().join(&name))
+                    .with_context(context)?;
             }
         }
-        Ok(false)
+        Ok(())
     }
 
     /// Brings the files to HEAD with `git reset --hard`, which touches only
@@ -203,6 +192,41 @@ impl Drop for WorktreeGuard {
             None => {}
         }
     }
+}
+
+fn shared_index(
+    copied_index: &Path,
+    source_git_dir: &Path,
+    hash: gix::hash::Kind,
+) -> Result<Option<String>> {
+    if !has_shared_index(source_git_dir)? {
+        return Ok(None);
+    }
+    let data =
+        fs::read(copied_index).with_context(|| format!("reading {}", copied_index.display()))?;
+    let (state, _) = gix::index::State::from_bytes(
+        &data,
+        filetime::FileTime::zero(),
+        hash,
+        gix::index::decode::Options::default(),
+    )
+    .with_context(|| format!("decoding {}", copied_index.display()))?;
+    Ok(state
+        .link()
+        .map(|link| format!("sharedindex.{}", link.shared_index_checksum)))
+}
+
+fn has_shared_index(dir: &Path) -> Result<bool> {
+    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        if entry?
+            .file_name()
+            .as_encoded_bytes()
+            .starts_with(b"sharedindex.")
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// A guard over a base no longer in use, as one replaced or removed.
